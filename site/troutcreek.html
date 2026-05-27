@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GorgeGauge</title>
+  <link rel="stylesheet" href="stylesV2.css" />
+</head>
+
+<body data-location="Trout Creek">
+  <header class="site-header">
+    <div class="logo">GorgeGauge</div>
+
+    <div class="subtitle">
+      <span class="location-picker">
+        <select id="locationSelect" class="location-select" aria-label="Location">
+          <option value="/index.html" data-location="Husum">Husum</option>
+          <option value="/troutcreek.html" data-location="Trout Creek">Trout Creek</option>
+        </select>
+      </span>
+      | Live Conditions
+    </div>
+  </header>
+
+  <main>
+    <section class="gallery-section">
+      <div id="status" class="status">Loading…</div>
+      <div id="gallery" class="gallery-grid"></div>
+    </section>
+  </main>
+
+  <div id="lightbox" class="lightbox hidden">
+    <div class="lightbox-backdrop"></div>
+    <div class="lightbox-content">
+      <button class="lightbox-close" aria-label="Close image">&times;</button>
+      <img id="lightbox-image" src="" alt="Expanded view" />
+      <div id="lightbox-caption" class="lightbox-caption"></div>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <span>© <span id="year"></span> GorgeGauge</span>
+    <script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="gorgegauge" data-color="#5F7FFF" data-emoji="🚣‍♀️"  data-font="Poppins" data-text="Support Gorge Gauge" data-outline-color="#000000" data-font-color="#ffffff" data-coffee-color="#FFDD00" ></script>
+  </footer>
+
+  <script>
+    document.getElementById("year").textContent = new Date().getFullYear();
+
+    (function syncDropdownToPage() {
+      const select = document.getElementById("locationSelect");
+      if (!select) return;
+
+      const path = (window.location.pathname || "/").toLowerCase();
+      for (const opt of select.options) {
+        const optPath = (opt.value || "").toLowerCase();
+        if (optPath === path) {
+          select.value = opt.value;
+          return;
+        }
+      }
+
+      if (path === "/" || path.endsWith("/index.html")) {
+        select.value = "/index.html";
+      }
+    })();
+
+    document.getElementById("locationSelect").addEventListener("change", function () {
+      window.location.href = this.value;
+    });
+  </script>
+<script>
+  window.GORGEGAUGE_LATEST_JSON = "/latestTroutCreek.json";
+  window.GORGEGAUGE_LOCATION_LABEL = "Trout Creek";
+</script>
+<script src="appv5.js"></script>
+
+</body>
+</html>

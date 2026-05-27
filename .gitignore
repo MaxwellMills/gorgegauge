@@ -1,0 +1,40 @@
+# Python
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.so
+
+# Env / secrets
+.env
+.env.local
+
+# Old dev scripts with hardcoded credentials
+tactacam_step1*.py
+
+# macOS
+.DS_Store
+.AppleDouble
+
+# Generated data files (produced at runtime by jobs)
+site/latest*.json
+site/latestHusum.json
+site/latestTroutCreek.json
+
+# Test images / local downloads
+*.jpg
+*.jpeg
+*.JPG
+*.JPEG
+*.png
+
+# Claude Code memory
+.claude/
+
+# IDE
+.vscode/
+.idea/
+*.swp
