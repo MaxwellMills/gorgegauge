@@ -132,9 +132,14 @@ def ask_claude_to_read_gauge(image_bytes):
     )
 
     text = message.content[0].text.strip()
-    text = re.sub(r"```json|```", "", text).strip()
+    log.info("Raw Claude response: %r", text)
 
-    return json.loads(text)
+    # Extract JSON object from response — Claude sometimes adds prose before/after
+    match = re.search(r'\{[^{}]+\}', text, re.DOTALL)
+    if not match:
+        raise RuntimeError(f"No JSON object found in Claude response: {text!r}")
+
+    return json.loads(match.group())
 
 
 def write_latest_gauge_json(payload):
