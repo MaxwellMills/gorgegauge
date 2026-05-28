@@ -86,29 +86,38 @@ SYSTEM_PROMPT = (
     "You are reading a river staff gauge at Husum Falls on the White Salmon River, WA. "
 
     "GAUGE LAYOUT: "
-    "A white vertical staff mounted on the rock face in the background. "
-    "Numbers decrease from top to bottom: 6, 5, 4, 3, 2, 1, 0. "
-    "CRITICAL: each number is printed just ABOVE its corresponding wide hashmark. "
-    "So the '3' label sits just above the 3 ft hashmark, '2' just above the 2 ft hashmark, etc. "
-    "Narrower hashmarks appear every 0.25 ft between the wide whole-foot marks. "
+    "A white vertical staff mounted on the rock face. "
+    "Numbers run 6, 5, 4, 3, 2, 1 from top to bottom. "
+    "Each number label is printed ABOVE its hashmark — the '2' label is just above the 2 ft hashmark, "
+    "'3' label is just above the 3 ft hashmark, and so on. "
+    "Narrower hashmarks appear every 0.25 ft between whole-foot marks. "
 
-    "EXPECTED RANGE: At typical flows the gauge reads 1.5 ft to 4.5 ft. "
-    "If your reading is below 1.0 ft or above 5.5 ft, re-examine the image. "
+    "THE MOST IMPORTANT RULE — READ CAREFULLY: "
+    "The lowest number label you can still see above the waterline is your FLOOR. "
+    "The water level is always GREATER THAN OR EQUAL TO that number. "
+    "Example: if '2' is the lowest label visible above water → level is AT LEAST 2.0 ft, never 1.something. "
+    "Example: if '3' is the lowest label visible above water → level is AT LEAST 3.0 ft, never 2.something. "
+    "This is because each label sits ABOVE its hashmark — seeing '2' above water means "
+    "the 2 ft hashmark is at or below the water surface. "
+
+    "EXPECTED RANGE: 1.5 to 4.5 ft at normal flows. "
+    "Re-examine if below 1.0 ft or above 5.5 ft. "
 
     "THREE-STEP METHOD: "
     "Step 1 — Find the waterline: where the river surface meets the gauge staff. "
-    "Step 2 — Identify the two whole-foot marks bracketing the waterline. "
-    "  Each wide hashmark sits just BELOW its printed number label. "
-    "  The upper bracket (its number label visible above water) is above the waterline. "
-    "  The lower bracket mark is at or just below the waterline. "
-    "Step 3 — Estimate what fraction of the 1-ft gap the waterline sits above the lower bracket mark, "
-    "  then add that to the lower mark's value. "
-    "  Example: lower bracket = 2 ft mark, waterline 25% up to 3 ft → level = 2.25 ft. "
-    "  Example: lower bracket = 2 ft mark, waterline 75% up to 3 ft → level = 2.75 ft. "
-    "  Example: lower bracket = 3 ft mark, waterline 50% up to 4 ft → level = 3.50 ft. "
+    "Step 2 — Find the lowest number label still visible above the waterline. "
+    "  That number is your base (floor). The water is at or above that hashmark. "
+    "Step 3 — Estimate how far the waterline rises above that base hashmark "
+    "  as a fraction of the 1-ft gap up to the next whole-foot hashmark. Add to the base. "
+    "  Example: '2' is the lowest visible label, waterline is 25% of the way up toward the '3' hashmark → 2.25 ft. "
+    "  Example: '2' is the lowest visible label, waterline is 75% of the way up toward the '3' hashmark → 2.75 ft. "
+    "  Example: '3' is the lowest visible label, waterline is 50% of the way up toward the '4' hashmark → 3.50 ft. "
+
+    "SANITY CHECK before responding: Is your answer ≥ the base number from Step 2? "
+    "If not, you have made an error — go back and re-examine. "
 
     "Round to nearest 0.05 ft. Respond ONLY with raw JSON, no markdown: "
-    "{\"level\": 2.25, \"confidence\": \"medium\", \"notes\": \"2 ft mark just below waterline, 3 ft mark above, waterline ~25% up\"}"
+    "{\"level\": 2.25, \"confidence\": \"medium\", \"notes\": \"'2' is lowest visible label above water, waterline ~25% up toward '3' hashmark\"}"
 )
 
 
@@ -130,7 +139,7 @@ def ask_claude(image_bytes):
                 },
                 {
                     "type": "text",
-                    "text": "Read the water level. Top number on gauge is 6. Return JSON only.",
+                    "text": "Read the water level. Remember: the lowest number label you can see above the water is your floor — if '2' is visible above water, the level is at least 2.0 ft. Return JSON only.",
                 },
             ],
         }],
