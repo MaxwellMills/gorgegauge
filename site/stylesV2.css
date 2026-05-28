@@ -400,10 +400,20 @@ main {
 
 /* ── River section cards ─────────────────────────────────────────────────── */
 
-#riverList {
+#riverList,
+#riverListPortland {
   display: flex;
   flex-direction: column;
   gap: 1.1rem;
+}
+
+.gauges-section-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #334155;
+  margin: 2rem 0 0.75rem;
 }
 
 .rg-section {
