@@ -24,6 +24,31 @@
   </header>
 
   <main>
+    <!-- Gauge strip — hidden until JS loads husumGauge.json -->
+    <section class="gauge-strip" id="gaugeStrip">
+      <div class="gauge-strip-inner">
+        <div class="gauge-strip-level">
+          <div class="gauge-level-label">Water Level</div>
+          <div class="gauge-level-num" id="gaugeNumber">—</div>
+          <div class="gauge-level-unit">Feet</div>
+          <div class="gauge-level-badge" id="gaugeBadge"></div>
+        </div>
+        <div class="gauge-strip-bar">
+          <div class="gauge-bar-track">
+            <div class="gauge-bar-fill" id="gaugeBarFill"></div>
+          </div>
+          <div class="gauge-bar-ticks">
+            <span>0</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6 ft</span>
+          </div>
+          <div class="gauge-notes" id="gaugeNotes"></div>
+        </div>
+        <div class="gauge-strip-photo">
+          <img class="gauge-thumb" id="gaugeThumb" src="" alt="Latest gauge photo" />
+          <div class="gauge-read-at" id="gaugeReadAt"></div>
+        </div>
+      </div>
+    </section>
+
     <section class="gallery-section">
       <div id="status" class="status">Loading…</div>
       <div id="gallery" class="gallery-grid"></div>
@@ -72,8 +97,9 @@
   </script>
 <script>
   window.GORGEGAUGE_LATEST_JSON = "/latestHusum.json";
+  window.GORGEGAUGE_GAUGE_JSON  = "/husumGauge.json";
   window.GORGEGAUGE_LOCATION_LABEL = "Husum";
 </script>
-  <script src="appv5.js"></script>
+  <script src="appv6.js"></script>
 </body>
 </html>

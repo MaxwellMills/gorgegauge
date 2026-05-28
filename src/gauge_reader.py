@@ -21,7 +21,7 @@ PACIFIC = pytz.timezone("America/Los_Angeles")
 SOURCE_BUCKET = os.environ.get("SOURCE_BUCKET", "gorgewhitewater")
 SOURCE_PREFIX = os.environ.get("SOURCE_PREFIX", "tactacam/Husum/")
 OUTPUT_BUCKET = os.environ.get("OUTPUT_BUCKET", "gorgegauge.com")
-OUTPUT_KEY = os.environ.get("OUTPUT_KEY", "gauge/husum/latestGauge.json")
+OUTPUT_KEY = os.environ.get("OUTPUT_KEY", "husumGauge.json")
 
 PUBLIC_IMAGE_BASE = os.environ.get(
     "PUBLIC_IMAGE_BASE",
@@ -90,14 +90,25 @@ def ask_claude_to_read_gauge(image_bytes):
         max_tokens=250,
         system=(
             "You are reading a river staff gauge at Husum Falls on the White Salmon River, WA. "
-            "The gauge is a vertical white staff mounted on a rock face. "
+            "GAUGE STRUCTURE: The gauge is a vertical white staff mounted on a rock face. "
             "It has full-width horizontal hashmarks at each whole foot: 6, 5, 4, 3, 2, 1, 0. "
-            "Between each whole foot there are shorter hashmarks at the half and quarter foot intervals. "
-            "The top of the gauge is 6 ft. Numbers count down toward the water. "
-            "At typical flows, only the upper gauge is visible above water. "
-            "Find the water surface and report the level to the nearest 0.05 ft. "
-            "Return raw JSON only. Format: "
-            "{\"level\": 2.75, \"confidence\": \"high\", \"notes\": \"water surface near the 2.75 mark\"}"
+            "Between each whole foot there are evenly spaced shorter hashmarks at the half and quarter foot intervals. "
+            "The TOP of the gauge is 6 ft. Numbers count DOWN toward the water. "
+            "IMPORTANT: At typical flows only the upper portion of the gauge is visible above water — "
+            "the numbers you can see will be 6, 5, 4 and possibly 3. "
+            "HOW TO READ: "
+            "1. Identify the full-width hashmarks — these are the whole foot marks (6, 5, 4, 3...). "
+            "2. Find the lowest visible full-width hashmark above the waterline. "
+            "3. Count how many smaller hashmarks the water surface is above the next hashmark below it. "
+            "4. Each major division (between whole foot marks) has smaller hashmarks. "
+            "Report to the nearest 0.05 ft by estimating between hashmarks. "
+            "5. Report: [whole foot mark] plus [fractional distance to waterline]. "
+            "Example: water surface halfway between 3 and 3.25 hashmarks = 3.10 ft. "
+            "Example: water surface just above the 3 ft mark = 3.05 ft. "
+            "Example: water surface one small hashmark above 3 ft mark = 3.25 ft. "
+            "Round your final answer to the nearest 0.05 ft (e.g. 2.70, 2.75, 2.80, 2.85). "
+            "Respond ONLY with raw JSON, no markdown: "
+            "{\"level\": 2.75, \"confidence\": \"high\", \"notes\": \"water surface just below 3 ft mark, between 2.75 and 3.00\"}"
         ),
         messages=[
             {

@@ -208,6 +208,140 @@ main {
   flex: 0 0 auto;
 }
 
+/* ── Gauge Strip ─────────────────────────────────────────────────────────── */
+
+.gauge-strip {
+  display: none; /* revealed by JS after data loads */
+  background: #0f172a;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.gauge-strip-inner {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+/* Level number */
+.gauge-strip-level {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 5.5rem;
+}
+
+.gauge-level-label {
+  font-size: 0.58rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #475569;
+  margin-bottom: 0.1rem;
+}
+
+.gauge-level-num {
+  font-size: 3.75rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: #1e3a5f;
+  transition: color 0.5s ease;
+}
+
+.gauge-level-unit {
+  font-size: 0.58rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #475569;
+  margin-top: 0.1rem;
+}
+
+.gauge-level-badge {
+  margin-top: 0.45rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 0.18rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+/* Bar + meta */
+.gauge-strip-bar {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.gauge-bar-track {
+  height: 5px;
+  background: rgba(148, 163, 184, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.gauge-bar-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 3px;
+  transition: width 1.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.gauge-bar-ticks {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.55rem;
+  color: #334155;
+}
+
+.gauge-notes {
+  font-size: 0.7rem;
+  color: #475569;
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Thumbnail */
+.gauge-strip-photo {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+}
+
+.gauge-thumb {
+  display: none;
+  width: 88px;
+  height: 66px;
+  object-fit: cover;
+  object-position: center 35%;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.gauge-read-at {
+  font-size: 0.6rem;
+  color: #475569;
+  text-align: right;
+  max-width: 110px;
+  line-height: 1.5;
+}
+
+@media (max-width: 500px) {
+  .gauge-strip-photo { display: none; }
+  .gauge-level-num   { font-size: 3rem; }
+  .gauge-strip-inner { gap: 1rem; }
+}
+
 /* Footer */
 .site-footer {
   padding: 0.9rem 1rem 1.1rem;
