@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gorge Gauges — GorgeGauge</title>
+  <link rel="stylesheet" href="stylesV2.css" />
+</head>
+
+<body>
+  <header class="site-header">
+    <div class="logo">GorgeGauge</div>
+    <div class="subtitle">
+      <a href="/index.html" class="disclaimer-link">← Live Conditions</a>
+      <span class="subtitle-sep">·</span>
+      <a href="/disclaimer.html" class="disclaimer-link">Disclaimer</a>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- ── Columbia River featured ─────────────────────────────────────────── -->
+    <section class="gorge-featured">
+      <div class="gorge-featured-header">
+        <div>
+          <div class="gorge-featured-title">Columbia River</div>
+          <div class="gorge-featured-sub">Below Bonneville Dam, OR &nbsp;·&nbsp; USGS 14128870</div>
+        </div>
+        <a href="https://waterdata.usgs.gov/monitoring-location/14128870/"
+           target="_blank" rel="noopener noreferrer" class="usgs-ext-link">
+          USGS ↗
+        </a>
+      </div>
+
+      <div class="gorge-featured-reading" id="columbiaReading">—</div>
+
+      <div id="columbiaChart" class="gorge-chart"></div>
+
+      <div class="gorge-featured-footer">
+        <span id="columbiaTime" class="gc-time"></span>
+        <span id="columbiaRange" class="gc-time"></span>
+      </div>
+    </section>
+
+    <!-- ── Tributaries ────────────────────────────────────────────────────── -->
+    <h2 class="section-title">Gorge Tributaries</h2>
+    <p class="section-sub">Live readings via USGS NWIS · click any card to open the full gauge page</p>
+
+    <div id="gaugeGrid" class="gauge-grid-usgs">
+      <!-- cards injected by gaugesApp.js -->
+      <div class="gc-loading">Loading…</div>
+    </div>
+
+  </main>
+
+  <footer class="site-footer">
+    <span>© <span id="year"></span> GorgeGauge &nbsp;·&nbsp;
+      <a href="/disclaimer.html" style="color:inherit;text-decoration:none;opacity:0.7;">Disclaimer</a>
+    </span>
+  </footer>
+
+  <script>document.getElementById("year").textContent = new Date().getFullYear();</script>
+  <script src="gaugesApp.js"></script>
+</body>
+</html>

@@ -366,6 +366,177 @@ main {
   }
 }
 
+/* ── Gorge Gauges page ───────────────────────────────────────────────────── */
+
+.section-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #475569;
+  margin: 1.75rem 0 0.25rem;
+}
+
+.section-sub {
+  font-size: 0.78rem;
+  color: #334155;
+  margin-bottom: 1rem;
+}
+
+/* Columbia featured card */
+.gorge-featured {
+  background: radial-gradient(circle at top left, #1e293b, #020617);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 0.75rem;
+  padding: 1.25rem 1.5rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.gorge-featured-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.gorge-featured-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  letter-spacing: -0.01em;
+}
+
+.gorge-featured-sub {
+  font-size: 0.72rem;
+  color: #475569;
+  margin-top: 0.15rem;
+}
+
+.usgs-ext-link {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #3b82f6;
+  text-decoration: none;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  border-radius: 999px;
+  white-space: nowrap;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+
+.usgs-ext-link:hover {
+  color: #60a5fa;
+  border-color: rgba(96, 165, 250, 0.5);
+}
+
+.gorge-featured-reading {
+  font-size: 2.75rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #3b82f6;
+  line-height: 1;
+}
+
+.gorge-chart {
+  width: 100%;
+  min-height: 64px;
+  margin: 0.15rem 0;
+}
+
+.gorge-featured-footer {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.68rem;
+  color: #334155;
+}
+
+/* Tributary gauge cards */
+.gauge-grid-usgs {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+@media (min-width: 540px) {
+  .gauge-grid-usgs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 900px) {
+  .gauge-grid-usgs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.gauge-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem 1.1rem 0.9rem;
+  background: radial-gradient(circle at top, #1e293b, #020617);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 0.75rem;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+}
+
+.gauge-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.7);
+  border-color: rgba(248, 250, 252, 0.35);
+}
+
+.gc-top {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.gc-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.gc-sub {
+  font-size: 0.68rem;
+  color: #475569;
+}
+
+.gc-reading {
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #60a5fa;
+  line-height: 1;
+}
+
+.gc-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: auto;
+}
+
+.gc-run {
+  font-size: 0.65rem;
+}
+
+.gc-time {
+  font-size: 0.65rem;
+  color: #334155;
+}
+
+.gc-loading {
+  font-size: 0.85rem;
+  color: #475569;
+  padding: 0.5rem 0;
+}
+
 /* Footer */
 .site-footer {
   padding: 0.9rem 1rem 1.1rem;
