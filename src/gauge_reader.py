@@ -85,39 +85,39 @@ def image_url_for_key(key):
 SYSTEM_PROMPT = (
     "You are reading a river staff gauge at Husum Falls on the White Salmon River, WA. "
 
-    "GAUGE LAYOUT: "
-    "A white vertical staff mounted on the rock face. "
-    "Numbers run 6, 5, 4, 3, 2, 1 from top to bottom. "
-    "Each number label is printed ABOVE its hashmark — the '2' label is just above the 2 ft hashmark, "
-    "'3' label is just above the 3 ft hashmark, and so on. "
-    "Narrower hashmarks appear every 0.25 ft between whole-foot marks. "
+    "PHYSICAL LAYOUT: "
+    "A white vertical staff with large horizontal hashmarks at each whole foot (1, 2, 3...). "
+    "Each number label is printed ABOVE its hashmark — the '2' text sits higher on the staff "
+    "than the actual 2.0 ft measurement hashmark beneath it. "
+    "Smaller hashmarks every 0.25 ft between whole-foot marks. Numbers decrease top to bottom: 6 at top. "
 
-    "THE MOST IMPORTANT RULE — READ CAREFULLY: "
-    "The lowest number label you can still see above the waterline is your FLOOR. "
-    "The water level is always GREATER THAN OR EQUAL TO that number. "
-    "Example: if '2' is the lowest label visible above water → level is AT LEAST 2.0 ft, never 1.something. "
-    "Example: if '3' is the lowest label visible above water → level is AT LEAST 3.0 ft, never 2.something. "
-    "This is because each label sits ABOVE its hashmark — seeing '2' above water means "
-    "the 2 ft hashmark is at or below the water surface. "
+    "THE MOST IMPORTANT THING TO UNDERSTAND: "
+    "When the '2' label appears to be right at or just above the waterline, "
+    "the 2.0 ft hashmark is slightly LOWER — meaning it is just below the waterline. "
+    "Therefore the water level is ABOVE 2.0 ft (e.g. 2.1–2.5 ft). "
+    "DO NOT read this as 1.75 or 1.9 ft — that is wrong. "
+    "The same logic applies at every foot mark: seeing '3' just above water means level > 3.0 ft. "
 
-    "EXPECTED RANGE: 1.5 to 4.5 ft at normal flows. "
-    "Re-examine if below 1.0 ft or above 5.5 ft. "
+    "FLOOR RULE: The water level is always ≥ the value of the lowest number label visible above water. "
+    "Seeing '2' above water → reading is AT LEAST 2.0 ft. "
+    "Seeing '3' above water → reading is AT LEAST 3.0 ft. "
 
-    "THREE-STEP METHOD: "
-    "Step 1 — Find the waterline: where the river surface meets the gauge staff. "
-    "Step 2 — Find the lowest number label still visible above the waterline. "
-    "  That number is your base (floor). The water is at or above that hashmark. "
-    "Step 3 — Estimate how far the waterline rises above that base hashmark "
-    "  as a fraction of the 1-ft gap up to the next whole-foot hashmark. Add to the base. "
-    "  Example: '2' is the lowest visible label, waterline is 25% of the way up toward the '3' hashmark → 2.25 ft. "
-    "  Example: '2' is the lowest visible label, waterline is 75% of the way up toward the '3' hashmark → 2.75 ft. "
-    "  Example: '3' is the lowest visible label, waterline is 50% of the way up toward the '4' hashmark → 3.50 ft. "
+    "EXPECTED RANGE: 1.5–4.5 ft at normal flows. Re-examine if outside 1.0–5.5 ft. "
 
-    "SANITY CHECK before responding: Is your answer ≥ the base number from Step 2? "
-    "If not, you have made an error — go back and re-examine. "
+    "HOW TO READ: "
+    "1. Find the waterline — where the river surface meets the gauge staff. "
+    "2. Find the lowest number label still visible above the waterline — this is your FLOOR. "
+    "3. That label's hashmark is just below the label text and is at or below the waterline. "
+    "4. Estimate what fraction of the 1-ft gap the waterline is above that floor hashmark. "
+    "   Add that fraction to the floor value. "
+    "   Examples: "
+    "   — '2' is floor, waterline 25% up toward 3 ft hashmark → 2.25 ft "
+    "   — '2' is floor, waterline 75% up toward 3 ft hashmark → 2.75 ft "
+    "   — '3' is floor, waterline 50% up toward 4 ft hashmark → 3.50 ft "
+    "5. SANITY CHECK: your answer must be ≥ your floor value. If not, you have an error. "
 
     "Round to nearest 0.05 ft. Respond ONLY with raw JSON, no markdown: "
-    "{\"level\": 2.25, \"confidence\": \"medium\", \"notes\": \"'2' is lowest visible label above water, waterline ~25% up toward '3' hashmark\"}"
+    "{\"level\": 2.25, \"confidence\": \"medium\", \"notes\": \"'2' lowest visible label, waterline ~25% up toward 3 ft\"}"
 )
 
 
@@ -139,7 +139,7 @@ def ask_claude(image_bytes):
                 },
                 {
                     "type": "text",
-                    "text": "Read the water level. Remember: the lowest number label you can see above the water is your floor — if '2' is visible above water, the level is at least 2.0 ft. Return JSON only.",
+                    "text": "Read the gauge. Remember: if '2' is the lowest label visible above water, the level is AT LEAST 2.0 ft — not 1.75 or 1.9. Return JSON only.",
                 },
             ],
         }],
