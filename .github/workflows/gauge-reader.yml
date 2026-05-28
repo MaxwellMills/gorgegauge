@@ -1,0 +1,35 @@
+name: Daily gauge reading
+
+on:
+  schedule:
+    - cron: '0 18 * * *'   # 11:00 AM PDT (UTC-7) / 10:00 AM PST (UTC-8)
+  workflow_dispatch:         # allow manual trigger from GitHub UI
+
+jobs:
+  read-gauge:
+    name: Read Husum gauge → husumGauge.json
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install anthropic boto3 pytz requests
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-2
+
+      - name: Run gauge reader
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python3 -m src.gauge_reader
