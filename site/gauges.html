@@ -17,38 +17,16 @@
     </div>
   </header>
 
-  <main>
+  <main class="gauges-main">
 
-    <!-- ── Columbia River featured ─────────────────────────────────────────── -->
-    <section class="gorge-featured">
-      <div class="gorge-featured-header">
-        <div>
-          <div class="gorge-featured-title">Columbia River</div>
-          <div class="gorge-featured-sub">Below Bonneville Dam, OR &nbsp;·&nbsp; USGS 14128870</div>
-        </div>
-        <a href="https://waterdata.usgs.gov/monitoring-location/14128870/"
-           target="_blank" rel="noopener noreferrer" class="usgs-ext-link">
-          USGS ↗
-        </a>
-      </div>
+    <div class="gauges-intro">
+      <h1 class="gauges-title">Columbia River Gorge</h1>
+      <p class="gauges-sub">Live USGS flow data · 7-day charts · updated every 15 min</p>
+    </div>
 
-      <div class="gorge-featured-reading" id="columbiaReading">—</div>
-
-      <div id="columbiaChart" class="gorge-chart"></div>
-
-      <div class="gorge-featured-footer">
-        <span id="columbiaTime" class="gc-time"></span>
-        <span id="columbiaRange" class="gc-time"></span>
-      </div>
-    </section>
-
-    <!-- ── Tributaries ────────────────────────────────────────────────────── -->
-    <h2 class="section-title">Gorge Tributaries</h2>
-    <p class="section-sub">Live readings via USGS NWIS · click any card to open the full gauge page</p>
-
-    <div id="gaugeGrid" class="gauge-grid-usgs">
-      <!-- cards injected by gaugesApp.js -->
-      <div class="gc-loading">Loading…</div>
+    <!-- Rivers injected by gaugesApp.js -->
+    <div id="riverList">
+      <div class="rg-loading">Loading gauges…</div>
     </div>
 
   </main>
