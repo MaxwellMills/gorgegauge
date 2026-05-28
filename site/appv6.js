@@ -174,20 +174,13 @@ async function loadGauge() {
       }, 50);
     }
 
-    // AI notes
-    const notesEl = document.getElementById("gaugeNotes");
-    if (notesEl && d.notes) notesEl.textContent = d.notes;
-
-    // Thumbnail
-    const thumb = document.getElementById("gaugeThumb");
-    if (thumb && d.image_url) {
-      thumb.src = d.image_url;
-      thumb.style.display = "block";
-    }
-
     // Timestamp
     const readAt = document.getElementById("gaugeReadAt");
     if (readAt && d.read_at) readAt.textContent = "Last read: " + d.read_at;
+
+    // AI notes
+    const notesEl = document.getElementById("gaugeNotes");
+    if (notesEl && d.notes) notesEl.textContent = d.notes;
 
   } catch (e) {
     // Gauge data unavailable — strip stays hidden, gallery still loads
