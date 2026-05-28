@@ -196,6 +196,22 @@ def read_previous_level():
 
 # ── Output ────────────────────────────────────────────────────────────────────
 
+def update_preview_image(source_key):
+    """Copy the latest trail cam image to a fixed S3 key for use as og:image."""
+    try:
+        s3.copy_object(
+            Bucket=OUTPUT_BUCKET,
+            CopySource={"Bucket": SOURCE_BUCKET, "Key": source_key},
+            Key="husum-preview.jpg",
+            ContentType="image/jpeg",
+            MetadataDirective="REPLACE",
+            CacheControl="max-age=3600",
+        )
+        log.info("Updated og:image → s3://%s/husum-preview.jpg", OUTPUT_BUCKET)
+    except Exception as e:
+        log.warning("Could not update preview image: %s", e)
+
+
 def write_gauge_json(payload):
     body = json.dumps(payload, indent=2).encode("utf-8")
     s3.put_object(
@@ -251,6 +267,7 @@ def main():
     }
 
     write_gauge_json(payload)
+    update_preview_image(latest_key)
     print(json.dumps(payload, indent=2))
 
 
