@@ -24,6 +24,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  overflow: hidden; /* prevent subtitle overflow from scrolling the page */
 }
 
 .site-header .logo {
@@ -40,6 +41,19 @@ body {
   align-items: center;
   gap: 0.45rem;
   white-space: nowrap;
+}
+
+@media (max-width: 899px) {
+  .site-header .subtitle {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    max-width: 100%;
+  }
+
+  .site-header .subtitle::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 .subtitle-sep {
