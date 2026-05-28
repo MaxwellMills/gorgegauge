@@ -9,9 +9,11 @@
 
 <body>
   <header class="site-header">
-    <div class="logo">GorgeGauge</div>
+    <a href="/" class="logo" style="text-decoration:none;color:inherit;">GorgeGauge</a>
     <div class="subtitle">
-      <a href="/index.html" class="disclaimer-link">← Live Conditions</a>
+      <a href="/index.html" class="disclaimer-link">Live Conditions</a>
+      <span class="subtitle-sep">·</span>
+      <span class="subtitle-active">Gorge Gauges</span>
       <span class="subtitle-sep">·</span>
       <a href="/disclaimer.html" class="disclaimer-link">Disclaimer</a>
     </div>
@@ -20,14 +22,99 @@
   <main class="gauges-main">
 
     <div class="gauges-intro">
-      <h1 class="gauges-title">Columbia River Gorge</h1>
-      <p class="gauges-sub">Live USGS flow data · 7-day charts · updated every 15 min</p>
+      <h1 class="gauges-title">Gorge River Gauges</h1>
+      <p class="gauges-sub">7-day hydrographs via NOAA Northwest River Forecast Center · updated every 15 min</p>
     </div>
 
-    <!-- Rivers injected by gaugesApp.js -->
-    <div id="riverList">
-      <div class="rg-loading">Loading gauges…</div>
-    </div>
+    <!-- Columbia River — Bonneville -->
+    <article class="rg-section">
+      <div class="rg-header">
+        <div class="rg-header-left">
+          <h2 class="rg-name">Columbia River</h2>
+          <div class="rg-sub">at Bonneville Dam, OR &nbsp;·&nbsp; NWRFC BONO3</div>
+        </div>
+        <a class="rg-usgs-link"
+           href="https://www.nwrfc.noaa.gov/river/station/flowplot/flowplot.cgi?id=BONO3"
+           target="_blank" rel="noopener noreferrer">NWRFC ↗</a>
+      </div>
+      <div class="rg-chart-wrap">
+        <img class="rg-chart-img nwrfc-img" data-id="BONO3" data-pe="QR"
+             alt="Columbia River at Bonneville — 7-day flow chart" />
+      </div>
+      <p class="rg-context">Main stem reference for Gorge conditions. Spring runoff (Apr–Jun) drives peak flows and the best wind/kite season.</p>
+    </article>
+
+    <!-- White Salmon -->
+    <article class="rg-section">
+      <div class="rg-header">
+        <div class="rg-header-left">
+          <h2 class="rg-name">White Salmon River</h2>
+          <div class="rg-sub">near Underwood, WA &nbsp;·&nbsp; NWRFC UNDW1</div>
+        </div>
+        <a class="rg-usgs-link"
+           href="https://www.nwrfc.noaa.gov/river/station/flowplot/flowplot.cgi?id=UNDW1"
+           target="_blank" rel="noopener noreferrer">NWRFC ↗</a>
+      </div>
+      <div class="rg-chart-wrap">
+        <img class="rg-chart-img nwrfc-img" data-id="UNDW1" data-pe="HG"
+             alt="White Salmon River — 7-day stage chart" />
+      </div>
+      <p class="rg-context">Downstream gauge for Husum Falls. Use the <a href="/index.html" class="rg-inline-link">GorgeGauge trail cam</a> for the actual staff reading at the falls. 300–900 cfs is the classic Husum range.</p>
+    </article>
+
+    <!-- West Fork Hood River -->
+    <article class="rg-section">
+      <div class="rg-header">
+        <div class="rg-header-left">
+          <h2 class="rg-name">West Fork Hood River</h2>
+          <div class="rg-sub">near Dee, OR &nbsp;·&nbsp; NWRFC WFHO3</div>
+        </div>
+        <a class="rg-usgs-link"
+           href="https://www.nwrfc.noaa.gov/river/station/flowplot/flowplot.cgi?id=WFHO3"
+           target="_blank" rel="noopener noreferrer">NWRFC ↗</a>
+      </div>
+      <div class="rg-chart-wrap">
+        <img class="rg-chart-img nwrfc-img" data-id="WFHO3" data-pe="HG"
+             alt="West Fork Hood River — 7-day stage chart" />
+      </div>
+      <p class="rg-context">Snowmelt-driven. Joins the East Fork at Tucker Bridge to form the Hood River mainstem. Peaks in late May–June.</p>
+    </article>
+
+    <!-- Klickitat -->
+    <article class="rg-section">
+      <div class="rg-header">
+        <div class="rg-header-left">
+          <h2 class="rg-name">Klickitat River</h2>
+          <div class="rg-sub">near Pitt, WA &nbsp;·&nbsp; NWRFC PITW1</div>
+        </div>
+        <a class="rg-usgs-link"
+           href="https://www.nwrfc.noaa.gov/river/station/flowplot/flowplot.cgi?id=PITW1"
+           target="_blank" rel="noopener noreferrer">NWRFC ↗</a>
+      </div>
+      <div class="rg-chart-wrap">
+        <img class="rg-chart-img nwrfc-img" data-id="PITW1" data-pe="HG"
+             alt="Klickitat River — 7-day stage chart" />
+      </div>
+      <p class="rg-context">Long multi-day run from Glenwood to Lyle. Sweet spot 500–2,000 cfs. Classic flatwater stretch below Lyle accessible all season.</p>
+    </article>
+
+    <!-- Sandy River -->
+    <article class="rg-section">
+      <div class="rg-header">
+        <div class="rg-header-left">
+          <h2 class="rg-name">Sandy River</h2>
+          <div class="rg-sub">at Sandy, OR &nbsp;·&nbsp; NWRFC SNDO3</div>
+        </div>
+        <a class="rg-usgs-link"
+           href="https://www.nwrfc.noaa.gov/river/station/flowplot/flowplot.cgi?id=SNDO3"
+           target="_blank" rel="noopener noreferrer">NWRFC ↗</a>
+      </div>
+      <div class="rg-chart-wrap">
+        <img class="rg-chart-img nwrfc-img" data-id="SNDO3" data-pe="HG"
+             alt="Sandy River — 7-day stage chart" />
+      </div>
+      <p class="rg-context">Closest Gorge-area run to Portland. Marmot to Revenue Bridge runs well 200–700 cfs. Very bony below 150 cfs.</p>
+    </article>
 
   </main>
 
@@ -37,7 +124,22 @@
     </span>
   </footer>
 
-  <script>document.getElementById("year").textContent = new Date().getFullYear();</script>
-  <script src="gaugesApp.js"></script>
+  <script>
+    document.getElementById("year").textContent = new Date().getFullYear();
+
+    // Stamp a fresh version key so browsers don't serve a stale cached chart
+    const ts = Math.floor(Date.now() / 1000);
+    document.querySelectorAll('.nwrfc-img').forEach(function(img) {
+      img.src = 'https://www.nwrfc.noaa.gov/station/flowplot/hydroPlot.php'
+              + '?id='  + img.dataset.id
+              + '&pe='  + img.dataset.pe
+              + '&v='   + ts;
+      img.onerror = function() {
+        this.closest('.rg-chart-wrap').innerHTML =
+          '<p class="rg-chart-err">Chart unavailable — <a href="https://www.nwrfc.noaa.gov/river/station/flowplot/flowplot.cgi?id='
+          + img.dataset.id + '" target="_blank" rel="noopener">view on NWRFC ↗</a></p>';
+      };
+    });
+  </script>
 </body>
 </html>
