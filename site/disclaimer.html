@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Disclaimer — GorgeGauge</title>
+  <link rel="stylesheet" href="stylesV2.css" />
+  <style>
+    .disclaimer-wrap {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 2rem 1rem 3rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .disclaimer-wrap h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #f1f5f9;
+      letter-spacing: -0.02em;
+    }
+
+    .disclaimer-wrap p {
+      font-size: 0.95rem;
+      line-height: 1.7;
+      color: #94a3b8;
+    }
+
+    .disclaimer-wrap p strong {
+      color: #e2e8f0;
+    }
+
+    .disclaimer-wrap .disclaimer-card {
+      background: radial-gradient(circle at top, #1e293b, #020617);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      border-radius: 0.75rem;
+      padding: 1.5rem 1.5rem 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .disclaimer-back {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.85rem;
+      color: #64748b;
+      text-decoration: none;
+      transition: color 120ms ease;
+    }
+
+    .disclaimer-back:hover {
+      color: #94a3b8;
+    }
+  </style>
+</head>
+
+<body>
+  <header class="site-header">
+    <div class="logo">GorgeGauge</div>
+    <div class="subtitle">Disclaimer</div>
+  </header>
+
+  <main>
+    <div class="disclaimer-wrap">
+      <a href="/index.html" class="disclaimer-back">← Back to Husum</a>
+
+      <h1>Hey, read this real quick.</h1>
+
+      <div class="disclaimer-card">
+        <p>
+          <strong>GorgeGauge is not an official gauge.</strong> The water level readings shown on this site are estimated by an AI model looking at trail camera photos. It is doing its best. Sometimes it is wrong.
+        </p>
+        <p>
+          This site exists to give paddlers a rough sense of conditions on the White Salmon River. It is <strong>not</strong> a substitute for your own judgment, local knowledge, or official USGS gauge data.
+        </p>
+        <p>
+          <strong>Whitewater kayaking and rafting are inherently dangerous activities.</strong> River levels change fast. A "Chill" reading this morning can be "Wildin'" by afternoon. Always scout, always check multiple sources, and always paddle within your ability.
+        </p>
+        <p>
+          By using this site you acknowledge that <strong>you are a grown adult who makes your own decisions.</strong> GorgeGauge, its creator, and anyone affiliated with it accept zero liability for anything that happens on or near the water. If something goes sideways, that's on you — not on a website that read a photo with AI.
+        </p>
+        <p>
+          Be safe out there. Wear your gear. Tell someone where you're going.
+        </p>
+      </div>
+
+      <a href="/index.html" class="disclaimer-back">← Back to Husum</a>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <span>© <span id="year"></span> GorgeGauge</span>
+  </footer>
+
+  <script>
+    document.getElementById("year").textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>
