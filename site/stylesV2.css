@@ -93,6 +93,31 @@ body {
   color: #0b1120;
 }
 
+/* Notice bar */
+.notice-bar {
+  padding: 0.45rem 1rem;
+  background: rgba(251, 191, 36, 0.06);
+  border-bottom: 1px solid rgba(251, 191, 36, 0.18);
+  font-size: 0.78rem;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  text-align: center;
+}
+
+.notice-bar a {
+  color: #fbbf24;
+  text-decoration: none;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.notice-bar a:hover {
+  text-decoration: underline;
+}
+
 /* Main */
 main {
   flex: 1;
