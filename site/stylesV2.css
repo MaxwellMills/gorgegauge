@@ -299,6 +299,59 @@ main {
   white-space: nowrap;
 }
 
+/* ── Gauge strip — mobile ────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .gauge-strip {
+    padding: 1.1rem 1.1rem 0.9rem;
+    background: linear-gradient(135deg, #0f172a 0%, #0a1628 100%);
+    border-color: rgba(148, 163, 184, 0.22);
+  }
+
+  .gauge-head {
+    align-items: center;
+    margin-bottom: 0.9rem;
+  }
+
+  .gauge-num {
+    font-size: 3.75rem;
+  }
+
+  .gauge-unit {
+    font-size: 1.1rem;
+  }
+
+  .gauge-badge {
+    font-size: 0.75rem;
+    padding: 0.3rem 0.85rem;
+  }
+
+  /* Hide the tick labels — they collapse to "0123456 ft" on narrow screens */
+  .gauge-ticks {
+    display: none;
+  }
+
+  /* Thicker bar to compensate for removed ticks */
+  .gauge-bar-track {
+    height: 7px;
+    margin-bottom: 0.8rem;
+  }
+
+  /* Stack footer, hide verbose AI notes */
+  .gauge-footer {
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .gauge-notes {
+    display: none;
+  }
+
+  .gauge-read-at {
+    font-size: 0.7rem;
+    color: #4b5563;
+  }
+}
+
 /* Footer */
 .site-footer {
   padding: 0.9rem 1rem 1.1rem;
