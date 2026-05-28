@@ -181,6 +181,19 @@ def read_consensus(image_list):
     return median, readings, best_notes
 
 
+# ── Previous reading ──────────────────────────────────────────────────────────
+
+def read_previous_level():
+    """Fetch the existing gauge JSON from S3 and return (level, read_at_iso)."""
+    try:
+        obj = s3.get_object(Bucket=OUTPUT_BUCKET, Key=OUTPUT_KEY)
+        data = json.loads(obj["Body"].read())
+        return data.get("level"), data.get("read_at_iso")
+    except Exception as e:
+        log.warning("Could not read previous gauge data: %s", e)
+        return None, None
+
+
 # ── Output ────────────────────────────────────────────────────────────────────
 
 def write_gauge_json(payload):
@@ -213,12 +226,20 @@ def main():
 
     median_level, all_readings, notes = read_consensus(latest_n)
 
+    # Previous reading for trend indicator
+    prev_level, prev_read_at_iso = read_previous_level()
+    if prev_level is not None:
+        log.info("Previous level: %.2f ft → current: %.2f ft (Δ %.2f)",
+                 prev_level, median_level, median_level - prev_level)
+
     # Most recent image for display
     latest_key, photo_ts = latest_n[0]
     now_pacific = datetime.now(PACIFIC)
 
     payload = {
         "level": median_level,
+        "previous_level": prev_level,
+        "previous_read_at_iso": prev_read_at_iso,
         "readings": all_readings,
         "images_analyzed": len(all_readings),
         "notes": notes,

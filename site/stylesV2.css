@@ -271,6 +271,13 @@ main {
   flex-shrink: 0;
 }
 
+.gauge-trend {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
 .gauge-bar-track {
   height: 5px;
   background: rgba(148, 163, 184, 0.1);

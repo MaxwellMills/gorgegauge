@@ -182,6 +182,23 @@ async function loadGauge() {
     const notesEl = document.getElementById("gaugeNotes");
     if (notesEl && d.notes) notesEl.textContent = d.notes;
 
+    // Trend indicator
+    const trendEl = document.getElementById("gaugeTrend");
+    if (trendEl && d.previous_level != null) {
+      const diff = Math.round((d.level - d.previous_level) * 100) / 100;
+      const abs  = Math.abs(diff);
+      if (abs < 0.1) {
+        trendEl.textContent = "→ Stable";
+        trendEl.style.color = "#9ca3af";
+      } else if (diff > 0) {
+        trendEl.textContent = `↑ +${diff.toFixed(2)} ft`;
+        trendEl.style.color = "#f97316";
+      } else {
+        trendEl.textContent = `↓ ${diff.toFixed(2)} ft`;
+        trendEl.style.color = "#22c55e";
+      }
+    }
+
   } catch (e) {
     // Gauge data unavailable — strip stays hidden, gallery still loads
   }
