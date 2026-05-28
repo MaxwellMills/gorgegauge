@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Background -->
+  <rect width="32" height="32" rx="7" fill="#0b1120"/>
+  <!-- Gauge staff -->
+  <rect x="13" y="3" width="6" height="26" rx="3" fill="#1e293b"/>
+  <!-- Water fill -->
+  <rect x="13" y="15" width="6" height="14" rx="3" fill="#3b82f6"/>
+  <!-- Flat top of water fill -->
+  <rect x="13" y="15" width="6" height="3" fill="#3b82f6"/>
+  <!-- Level indicator lines extending both sides -->
+  <rect x="3" y="14" width="10" height="2.5" rx="1.25" fill="#22c55e"/>
+  <rect x="19" y="14" width="10" height="2.5" rx="1.25" fill="#22c55e"/>
+  <!-- Tick marks on right -->
+  <rect x="19" y="6.5" width="5" height="1.5" rx="0.75" fill="#334155"/>
+  <rect x="19" y="10.5" width="3.5" height="1.5" rx="0.75" fill="#334155"/>
+  <rect x="19" y="21" width="3.5" height="1.5" rx="0.75" fill="#334155"/>
+  <rect x="19" y="25" width="5" height="1.5" rx="0.75" fill="#334155"/>
+</svg>
