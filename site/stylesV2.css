@@ -180,12 +180,13 @@ main {
 }
 
 /* Hidden from view but kept in the render tree so showPicker() works.
-   opacity:0 + pointer-events:none is the safe combo — visibility:hidden
-   and display:none both break showPicker(). */
+   Must be at least 1×1px — zero dimensions count as "not rendered" and
+   showPicker() throws. opacity:0 + pointer-events:none keeps it invisible
+   and non-interactive without breaking the API. */
 .date-picker-sr {
   position: absolute;
-  width: 0;
-  height: 0;
+  width: 1px;
+  height: 1px;
   opacity: 0;
   pointer-events: none;
   overflow: hidden;
