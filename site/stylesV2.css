@@ -180,8 +180,9 @@ main {
 
 /* Transparent overlay — tapping anywhere on the pill hits this input.
    opacity must be > 0 (we use 0.01) because iOS Safari refuses to open
-   the native date picker for fully invisible inputs. The value is
-   imperceptible to humans but satisfies the browser's visibility check. */
+   the native date picker for fully invisible inputs. color:transparent
+   hides the mm/dd/yyyy format hint; the webkit pseudo hides Chrome's
+   calendar icon. Combined they're invisible at any size. */
 .date-picker {
   position: absolute;
   top: 0;
@@ -196,8 +197,14 @@ main {
   border: none;
   -webkit-appearance: none;
   appearance: none;
+  color: transparent;
   color-scheme: dark;
   font-size: 16px; /* prevent iOS auto-zoom on focus */
+}
+
+.date-picker::-webkit-calendar-picker-indicator {
+  opacity: 0;
+  display: none;
 }
 
 .date-picker-clear {
