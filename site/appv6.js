@@ -114,7 +114,7 @@ async function loadImages() {
       return;
     }
 
-    setStatus(items.length + " image" + (items.length !== 1 ? "s" : ""));
+    setStatus("Showing " + items.length + " images");
     const fragment = document.createDocumentFragment();
     items.forEach((item, index) => fragment.appendChild(buildCard(item, index)));
     if (galleryEl) {
@@ -280,7 +280,7 @@ async function loadImagesByDate(dateStr) {
       return;
     }
 
-    setStatus(matches.length + " image" + (matches.length !== 1 ? "s" : ""));
+    setStatus("Showing " + matches.length + " images");
 
     // setTimeout(0) gives Safari a tick to repaint the cleared gallery before
     // we append new cards — without it Safari sometimes shows stale content
