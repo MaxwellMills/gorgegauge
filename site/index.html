@@ -65,11 +65,14 @@
       <div class="gallery-controls">
         <div id="status" class="status">Loading…</div>
         <div class="archive-wrap">
-          <button type="button" class="archive-btn" id="archiveBtn">
-            📅 <span class="archive-btn-text">Browse dates</span>
-          </button>
-          <input type="date" id="datePicker" class="date-picker-sr" aria-label="Browse past dates" />
-          <button id="datePickerClear" class="date-picker-clear hidden" title="Back to latest">✕ Today</button>
+          <div class="date-picker-pill">
+            <span>📅</span>
+            <span class="archive-btn-text">Browse dates</span>
+            <!-- Input overlays the pill at opacity 0.01 — iOS Safari requires
+                 opacity > 0 to show the native picker for a tapped element -->
+            <input type="date" id="datePicker" class="date-picker" aria-label="Browse past dates" />
+          </div>
+          <button id="datePickerClear" class="date-picker-clear hidden">✕ Today</button>
         </div>
       </div>
       <div id="gallery" class="gallery-grid"></div>

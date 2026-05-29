@@ -211,10 +211,10 @@ loadReports();
 const reportForm = document.getElementById("reportForm");
 if (reportForm) reportForm.addEventListener("submit", submitReport);
 
-// Date picker
+// Date picker — the input overlays the pill at opacity 0.01, so tapping
+// the pill directly hits the input with no JS trigger required.
 const datePicker      = document.getElementById("datePicker");
 const datePickerClear = document.getElementById("datePickerClear");
-const archiveBtn      = document.getElementById("archiveBtn");
 
 if (datePicker) {
   datePicker.max = new Date().toISOString().slice(0, 10);
@@ -233,20 +233,6 @@ if (datePicker) {
 
   datePicker.addEventListener("change", onDateChange);
   datePicker.addEventListener("input",  onDateChange);
-}
-
-if (archiveBtn && datePicker) {
-  archiveBtn.addEventListener("click", function () {
-    try {
-      // showPicker() is the proper cross-browser way to open a date input programmatically
-      // Supported: Chrome 99+, Firefox 101+, Safari 16+ (iOS 16+)
-      datePicker.showPicker();
-    } catch (e) {
-      // Fallback for older browsers — direct focus+click
-      datePicker.focus();
-      datePicker.click();
-    }
-  });
 }
 
 if (datePickerClear) {
