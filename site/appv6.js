@@ -214,30 +214,41 @@ if (reportForm) reportForm.addEventListener("submit", submitReport);
 // Date picker
 const datePicker      = document.getElementById("datePicker");
 const datePickerClear = document.getElementById("datePickerClear");
+const archiveBtn      = document.getElementById("archiveBtn");
+
 if (datePicker) {
-  // Cap the max at today so future dates can't be chosen
   datePicker.max = new Date().toISOString().slice(0, 10);
 
   function onDateChange() {
     const val = datePicker.value;
-    if (val) {
-      loadImagesByDate(val);
-      if (datePickerClear) datePickerClear.classList.remove("hidden");
-      // Update the label text to show the selected date
-      const labelText = document.querySelector(".archive-btn-text");
-      if (labelText) {
-        const d = new Date(val + "T12:00:00");
-        labelText.textContent = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-      }
-    } else {
-      resetToLatest();
+    if (!val) return;
+    loadImagesByDate(val);
+    if (datePickerClear) datePickerClear.classList.remove("hidden");
+    const labelText = document.querySelector(".archive-btn-text");
+    if (labelText) {
+      const d = new Date(val + "T12:00:00");
+      labelText.textContent = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
     }
   }
 
-  // Both events for cross-browser (Safari fires 'change', Chrome sometimes 'input')
   datePicker.addEventListener("change", onDateChange);
   datePicker.addEventListener("input",  onDateChange);
 }
+
+if (archiveBtn && datePicker) {
+  archiveBtn.addEventListener("click", function () {
+    try {
+      // showPicker() is the proper cross-browser way to open a date input programmatically
+      // Supported: Chrome 99+, Firefox 101+, Safari 16+ (iOS 16+)
+      datePicker.showPicker();
+    } catch (e) {
+      // Fallback for older browsers — direct focus+click
+      datePicker.focus();
+      datePicker.click();
+    }
+  });
+}
+
 if (datePickerClear) {
   datePickerClear.addEventListener("click", function () {
     if (datePicker) datePicker.value = "";

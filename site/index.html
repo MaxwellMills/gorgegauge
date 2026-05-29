@@ -65,10 +65,10 @@
       <div class="gallery-controls">
         <div id="status" class="status">Loading…</div>
         <div class="archive-wrap">
-          <label class="archive-btn" for="datePicker">
+          <button type="button" class="archive-btn" id="archiveBtn">
             📅 <span class="archive-btn-text">Browse dates</span>
-          </label>
-          <input type="date" id="datePicker" class="date-picker" title="Browse a past date" />
+          </button>
+          <input type="date" id="datePicker" class="date-picker-sr" aria-label="Browse past dates" />
           <button id="datePickerClear" class="date-picker-clear hidden" title="Back to latest">✕ Today</button>
         </div>
       </div>
