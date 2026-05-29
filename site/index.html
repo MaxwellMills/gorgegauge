@@ -62,7 +62,13 @@
     </section>
 
     <section class="gallery-section">
-      <div id="status" class="status">Loading…</div>
+      <div class="gallery-controls">
+        <div id="status" class="status">Loading…</div>
+        <div class="archive-wrap">
+          <input type="date" id="datePicker" class="date-picker" title="Browse a past date" />
+          <button id="datePickerClear" class="date-picker-clear hidden" title="Back to latest">✕ Today</button>
+        </div>
+      </div>
       <div id="gallery" class="gallery-grid"></div>
     </section>
 
@@ -130,6 +136,7 @@
   window.GORGEGAUGE_GAUGE_JSON  = "/husumGauge.json";
   window.GORGEGAUGE_LOCATION_LABEL = "Husum";
   window.GORGEGAUGE_REPORTS_JSON = "/husumReports.json";
+  window.GORGEGAUGE_INDEX_JSON   = "/husumIndex.json";
   window.REPORTS_API = "https://6k000v78qa.execute-api.us-east-2.amazonaws.com/prod/report";
 </script>
   <script src="appv6.js"></script>

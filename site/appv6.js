@@ -211,6 +211,79 @@ loadReports();
 const reportForm = document.getElementById("reportForm");
 if (reportForm) reportForm.addEventListener("submit", submitReport);
 
+// Date picker
+const datePicker      = document.getElementById("datePicker");
+const datePickerClear = document.getElementById("datePickerClear");
+if (datePicker) {
+  // Cap the max at today so future dates can't be chosen
+  datePicker.max = new Date().toISOString().slice(0, 10);
+  datePicker.addEventListener("change", function () {
+    if (this.value) {
+      loadImagesByDate(this.value);
+      if (datePickerClear) datePickerClear.classList.remove("hidden");
+    } else {
+      resetToLatest();
+    }
+  });
+}
+if (datePickerClear) {
+  datePickerClear.addEventListener("click", function () {
+    if (datePicker) datePicker.value = "";
+    this.classList.add("hidden");
+    resetToLatest();
+  });
+}
+
+// ── Archive / date-picker ─────────────────────────────────────────────────────
+
+const INDEX_URL =
+  (typeof window.GORGEGAUGE_INDEX_JSON === "string" && window.GORGEGAUGE_INDEX_JSON.trim())
+    ? window.GORGEGAUGE_INDEX_JSON.trim()
+    : "/husumIndex.json";
+
+let _imageIndex = null; // cached after first fetch
+
+async function getImageIndex() {
+  if (_imageIndex) return _imageIndex;
+  const resp = await fetch(INDEX_URL + "?v=" + Date.now());
+  if (!resp.ok) throw new Error("index fetch failed");
+  const data = await resp.json();
+  _imageIndex = data.images || [];
+  return _imageIndex;
+}
+
+async function loadImagesByDate(dateStr) {
+  setStatus("Loading…");
+  if (galleryEl) galleryEl.innerHTML = "";
+
+  try {
+    const index = await getImageIndex();
+    const matches = index.filter(img => img.date === dateStr);
+
+    // Friendly date label
+    const label = new Date(dateStr + "T12:00:00").toLocaleDateString("en-US",
+      { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+
+    if (!matches.length) {
+      setStatus("No images found for " + label + ".");
+      return;
+    }
+
+    setStatus(matches.length + " image" + (matches.length !== 1 ? "s" : "") + " from " + label + ".");
+
+    const fragment = document.createDocumentFragment();
+    matches.forEach((item, i) => fragment.appendChild(buildCard(item, i + 1))); // i+1 so none get "Latest" badge
+    if (galleryEl) galleryEl.appendChild(fragment);
+  } catch (err) {
+    console.error(err);
+    setStatus("Could not load archive — try again.");
+  }
+}
+
+function resetToLatest() {
+  loadImages();
+}
+
 // ── Paddler Reports ───────────────────────────────────────────────────────────
 
 const REPORTS_JSON =
