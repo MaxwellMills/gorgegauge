@@ -204,7 +204,7 @@ main {
 
 .date-picker::-webkit-calendar-picker-indicator {
   opacity: 0;
-  display: none;
+  cursor: pointer;
 }
 
 .date-picker-clear {
