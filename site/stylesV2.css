@@ -179,17 +179,18 @@ main {
   color: #e5e7eb;
 }
 
-/* Visually hidden but present in DOM so showPicker() can target it */
+/* Hidden from view but kept in the render tree so showPicker() works.
+   opacity:0 + pointer-events:none is the safe combo — visibility:hidden
+   and display:none both break showPicker(). */
 .date-picker-sr {
   position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
   border: 0;
+  padding: 0;
   color-scheme: dark;
 }
 
