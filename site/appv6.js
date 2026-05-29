@@ -129,10 +129,10 @@ async function loadImages() {
 
 // ── Gauge strip ───────────────────────────────────────────────────────────────
 function levelColor(l) {
-  return l < 2.5 ? "#22c55e" : l < 3.5 ? "#3b82f6" : l < 4.5 ? "#f97316" : "#ef4444";
+  return l < 2.5 ? "#22c55e" : l < 4.0 ? "#3b82f6" : l < 6.0 ? "#f97316" : "#ef4444";
 }
 function levelLabel(l) {
-  return l < 2.5 ? "Chill" : l < 3.5 ? "A Vibe" : l < 4.5 ? "Spicy" : "Wildin'";
+  return l < 2.5 ? "Chill" : l < 4.0 ? "A Vibe" : l < 6.0 ? "Spicy" : "Wildin'";
 }
 
 async function loadGauge() {
