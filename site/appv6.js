@@ -217,19 +217,33 @@ const datePickerClear = document.getElementById("datePickerClear");
 if (datePicker) {
   // Cap the max at today so future dates can't be chosen
   datePicker.max = new Date().toISOString().slice(0, 10);
-  datePicker.addEventListener("change", function () {
-    if (this.value) {
-      loadImagesByDate(this.value);
+
+  function onDateChange() {
+    const val = datePicker.value;
+    if (val) {
+      loadImagesByDate(val);
       if (datePickerClear) datePickerClear.classList.remove("hidden");
+      // Update the label text to show the selected date
+      const labelText = document.querySelector(".archive-btn-text");
+      if (labelText) {
+        const d = new Date(val + "T12:00:00");
+        labelText.textContent = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      }
     } else {
       resetToLatest();
     }
-  });
+  }
+
+  // Both events for cross-browser (Safari fires 'change', Chrome sometimes 'input')
+  datePicker.addEventListener("change", onDateChange);
+  datePicker.addEventListener("input",  onDateChange);
 }
 if (datePickerClear) {
   datePickerClear.addEventListener("click", function () {
     if (datePicker) datePicker.value = "";
     this.classList.add("hidden");
+    const labelText = document.querySelector(".archive-btn-text");
+    if (labelText) labelText.textContent = "Browse dates";
     resetToLatest();
   });
 }
@@ -271,9 +285,13 @@ async function loadImagesByDate(dateStr) {
 
     setStatus(matches.length + " image" + (matches.length !== 1 ? "s" : "") + " from " + label + ".");
 
-    const fragment = document.createDocumentFragment();
-    matches.forEach((item, i) => fragment.appendChild(buildCard(item, i + 1))); // i+1 so none get "Latest" badge
-    if (galleryEl) galleryEl.appendChild(fragment);
+    // setTimeout(0) gives Safari a tick to repaint the cleared gallery before
+    // we append new cards — without it Safari sometimes shows stale content
+    setTimeout(function () {
+      const fragment = document.createDocumentFragment();
+      matches.forEach(function (item, i) { fragment.appendChild(buildCard(item, i + 1)); });
+      if (galleryEl) galleryEl.appendChild(fragment);
+    }, 0);
   } catch (err) {
     console.error(err);
     setStatus("Could not load archive — try again.");

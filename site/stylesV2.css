@@ -154,31 +154,38 @@ main {
   align-items: center;
   gap: 0.4rem;
   flex-shrink: 0;
+  position: relative;
 }
 
-.date-picker {
-  appearance: none;
-  -webkit-appearance: none;
-  font: inherit;
+/* The visible pill-button the user sees and clicks */
+.archive-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
   font-size: 0.78rem;
   color: #9ca3af;
-  background: transparent;
   border: 1px solid rgba(148, 163, 184, 0.35);
   border-radius: 999px;
   padding: 0.22rem 0.75rem;
   cursor: pointer;
+  white-space: nowrap;
   transition: border-color 120ms ease, color 120ms ease;
-  color-scheme: dark;
+  user-select: none;
 }
 
-.date-picker:hover {
+.archive-btn:hover {
   border-color: rgba(148, 163, 184, 0.55);
   color: #e5e7eb;
 }
 
-.date-picker:focus {
-  outline: none;
-  border-color: rgba(148, 163, 184, 0.55);
+/* The actual date input — invisible, sits on top of the label */
+.date-picker {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+  color-scheme: dark;
 }
 
 .date-picker-clear {
