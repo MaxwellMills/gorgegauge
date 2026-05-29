@@ -114,7 +114,7 @@ async function loadImages() {
       return;
     }
 
-    setStatus(items.length + " images");
+    setStatus(items.length + " image" + (items.length !== 1 ? "s" : ""));
     const fragment = document.createDocumentFragment();
     items.forEach((item, index) => fragment.appendChild(buildCard(item, index)));
     if (galleryEl) {
