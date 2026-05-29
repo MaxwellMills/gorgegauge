@@ -549,6 +549,135 @@ main {
   padding: 1rem 0;
 }
 
+/* ── Paddler Reports ─────────────────────────────────────────────────────── */
+
+.reports-section {
+  margin-top: 2rem;
+}
+
+.reports-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #334155;
+  margin-bottom: 0.75rem;
+}
+
+.report-form {
+  background: #0f172a;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 0.75rem;
+  padding: 0.9rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-bottom: 1rem;
+}
+
+.report-form input[type="text"],
+.report-form textarea {
+  background: rgba(148, 163, 184, 0.06);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 0.5rem;
+  color: #e5e7eb;
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.45rem 0.7rem;
+  width: 100%;
+  resize: none;
+  transition: border-color 120ms ease;
+}
+
+.report-form input[type="text"]:focus,
+.report-form textarea:focus {
+  outline: none;
+  border-color: rgba(148, 163, 184, 0.4);
+}
+
+.report-form textarea {
+  min-height: 64px;
+}
+
+.report-form-row {
+  display: flex;
+  gap: 0.55rem;
+  align-items: flex-start;
+}
+
+.report-submit {
+  background: rgba(30, 58, 95, 0.8);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 0.5rem;
+  color: #e5e7eb;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.45rem 0.9rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.report-submit:hover {
+  background: rgba(45, 79, 122, 0.9);
+  border-color: rgba(148, 163, 184, 0.5);
+}
+
+.report-submit:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.report-msg {
+  font-size: 0.78rem;
+  font-style: italic;
+}
+
+.report-card {
+  padding: 0.7rem 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+}
+
+.report-card:last-child {
+  border-bottom: none;
+}
+
+.report-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.7rem;
+  color: #475569;
+  margin-bottom: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.report-name {
+  font-weight: 600;
+  color: #64748b;
+}
+
+.report-level {
+  background: rgba(148, 163, 184, 0.1);
+  border-radius: 999px;
+  padding: 0.08rem 0.45rem;
+}
+
+.report-text {
+  font-size: 0.875rem;
+  color: #cbd5e1;
+  line-height: 1.55;
+}
+
+.report-empty {
+  font-size: 0.8rem;
+  color: #334155;
+  font-style: italic;
+  padding: 0.25rem 0;
+}
+
 /* Footer */
 .site-footer {
   padding: 0.9rem 1rem 1.1rem;

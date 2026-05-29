@@ -207,3 +207,99 @@ async function loadGauge() {
 // ── Boot ──────────────────────────────────────────────────────────────────────
 loadGauge();
 loadImages();
+loadReports();
+const reportForm = document.getElementById("reportForm");
+if (reportForm) reportForm.addEventListener("submit", submitReport);
+
+// ── Paddler Reports ───────────────────────────────────────────────────────────
+
+const REPORTS_JSON =
+  (typeof window.GORGEGAUGE_REPORTS_JSON === "string" && window.GORGEGAUGE_REPORTS_JSON.trim())
+    ? window.GORGEGAUGE_REPORTS_JSON.trim()
+    : "/husumReports.json";
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function formatReportDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) +
+    " at " + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+}
+
+function renderReports(reports) {
+  const list = document.getElementById("reportList");
+  if (!list) return;
+  if (!reports || !reports.length) {
+    list.innerHTML = '<p class="report-empty">No reports yet — be the first to share conditions.</p>';
+    return;
+  }
+  list.innerHTML = reports.map(r => `
+    <div class="report-card">
+      <div class="report-meta">
+        <span class="report-name">${escapeHtml(r.name || "Anonymous")}</span>
+        <span>·</span>
+        <span>${formatReportDate(r.iso)}</span>
+        ${r.level != null ? `<span>·</span><span class="report-level">${r.level} ft</span>` : ""}
+      </div>
+      <div class="report-text">${escapeHtml(r.text)}</div>
+    </div>
+  `).join("");
+}
+
+async function loadReports() {
+  try {
+    const resp = await fetch(REPORTS_JSON + "?v=" + Date.now());
+    if (!resp.ok) return;
+    const data = await resp.json();
+    renderReports(data.reports || []);
+  } catch (e) {
+    // Reports are optional — fail silently
+  }
+}
+
+async function submitReport(e) {
+  e.preventDefault();
+  const form = e.target;
+  const btn  = form.querySelector(".report-submit");
+  const msg  = document.getElementById("reportMsg");
+  const text = (form.querySelector("[name=text]").value || "").trim();
+  const name = (form.querySelector("[name=name]").value || "").trim();
+  const honeypot = form.querySelector("[name=website]").value;
+
+  if (!text || honeypot) return;
+
+  const apiUrl = (typeof window.REPORTS_API === "string") ? window.REPORTS_API.trim() : "";
+  if (!apiUrl) {
+    if (msg) { msg.textContent = "Submissions not yet configured."; msg.style.color = "#9ca3af"; msg.style.display = "block"; }
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "Sending…";
+  if (msg) msg.style.display = "none";
+
+  try {
+    const resp = await fetch(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, name }),
+    });
+    if (!resp.ok) throw new Error("server error");
+
+    form.querySelector("[name=text]").value = "";
+    form.querySelector("[name=name]").value = "";
+    if (msg) { msg.textContent = "Thanks — your report has been shared!"; msg.style.color = "#22c55e"; msg.style.display = "block"; }
+    await loadReports();
+  } catch (err) {
+    if (msg) { msg.textContent = "Something went wrong — try again."; msg.style.color = "#ef4444"; msg.style.display = "block"; }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Share Beta";
+  }
+}
