@@ -204,8 +204,100 @@ async function loadGauge() {
   }
 }
 
+// ── Weather strip (Ambient Weather station) ───────────────────────────────────
+const WEATHER_SLUG =
+  (typeof window.GORGEGAUGE_WEATHER_SLUG === "string")
+    ? window.GORGEGAUGE_WEATHER_SLUG.trim()
+    : "";
+
+function windCompass(deg) {
+  const dirs = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+  return dirs[Math.round(deg / 22.5) % 16];
+}
+
+function weatherStat(value, unit, name) {
+  const stat = document.createElement("div");
+  stat.className = "weather-stat";
+
+  const val = document.createElement("span");
+  val.className = "weather-val";
+  val.textContent = value;
+  if (unit) {
+    const u = document.createElement("span");
+    u.className = "weather-unit";
+    u.textContent = unit;
+    val.appendChild(u);
+  }
+
+  const label = document.createElement("span");
+  label.className = "weather-name";
+  label.textContent = name;
+
+  stat.appendChild(val);
+  stat.appendChild(label);
+  return stat;
+}
+
+async function loadWeather() {
+  if (!WEATHER_SLUG) return;
+  try {
+    const res = await fetch("https://lightning.ambientweather.net/devices?public.slug=" + WEATHER_SLUG);
+    if (!res.ok) return; // endpoint down — strip stays hidden
+    const json = await res.json();
+    const device = json && Array.isArray(json.data) ? json.data[0] : null;
+    const d = device && device.lastData;
+    if (!d || d.tempf == null) return;
+
+    // Don't show a reading the station took more than 12 h ago
+    const ageMin = Math.round((Date.now() - d.dateutc) / 60000);
+    if (!isFinite(ageMin) || ageMin > 12 * 60) return;
+
+    const grid = document.getElementById("weatherGrid");
+    if (!grid) return;
+    grid.innerHTML = "";
+
+    grid.appendChild(weatherStat(Math.round(d.tempf) + "°", "F", "Temp"));
+    if (d.windspeedmph != null) {
+      const dir = d.winddir != null ? " " + windCompass(d.winddir) : "";
+      grid.appendChild(weatherStat(Math.round(d.windspeedmph) + dir, "mph", "Wind"));
+    }
+    if (d.maxdailygust != null) {
+      grid.appendChild(weatherStat(Math.round(d.maxdailygust), "mph", "Max Gust"));
+    }
+    if (d.humidity != null) {
+      grid.appendChild(weatherStat(d.humidity + "%", "", "Humidity"));
+    }
+    if (d.dailyrainin != null) {
+      grid.appendChild(weatherStat(d.dailyrainin.toFixed(2) + "″", "", "Rain Today"));
+    }
+    if (d.weeklyrainin != null) {
+      grid.appendChild(weatherStat(d.weeklyrainin.toFixed(2) + "″", "", "Rain 7-Day"));
+    }
+
+    const updated = document.getElementById("weatherUpdated");
+    if (updated) {
+      updated.textContent = ageMin < 1 ? "just now"
+        : ageMin < 60 ? ageMin + " min ago"
+        : Math.round(ageMin / 60) + " h ago";
+    }
+
+    const source = document.getElementById("weatherSource");
+    if (source) {
+      const name = (device.info && device.info.name) ? device.info.name : "station";
+      source.textContent = name + " ↗";
+      source.href = "https://ambientweather.net/dashboard/" + WEATHER_SLUG;
+    }
+
+    const strip = document.getElementById("weatherStrip");
+    if (strip) strip.style.display = "block";
+  } catch (e) {
+    // Weather is optional — strip stays hidden, everything else still loads
+  }
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 loadGauge();
+loadWeather();
 loadImages();
 loadReports();
 const reportForm = document.getElementById("reportForm");
