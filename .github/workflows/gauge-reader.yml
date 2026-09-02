@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: '0 18 * * *'   # 11:00 AM PDT (UTC-7) / 10:00 AM PST (UTC-8)
   workflow_dispatch:         # allow manual trigger from GitHub UI
+    inputs:
+      dry_run:
+        description: "Read the gauge and print the result without writing to S3"
+        type: boolean
+        default: false
 
 jobs:
   read-gauge:
@@ -32,7 +37,9 @@ jobs:
       - name: Run gauge reader
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: python3 -m src.gauge_reader
 
       - name: Rebuild image index
+        if: ${{ inputs.dry_run != true }}
         run: python3 -m src.build_index

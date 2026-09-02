@@ -152,7 +152,7 @@ async function loadGauge() {
     // Level number
     const numEl = document.getElementById("gaugeNumber");
     if (numEl) {
-      numEl.textContent = parseFloat(d.level).toFixed(2);
+      numEl.textContent = parseFloat(d.level).toFixed(1);
       numEl.style.color = color;
     }
 
@@ -176,25 +176,45 @@ async function loadGauge() {
 
     // Timestamp
     const readAt = document.getElementById("gaugeReadAt");
-    if (readAt && d.read_at) readAt.textContent = "Last read: " + d.read_at;
+    if (readAt && d.read_at) {
+      let text = "Last read: " + d.read_at;
+      const ageH = d.read_at_iso
+        ? (Date.now() - new Date(d.read_at_iso).getTime()) / 3600000
+        : null;
+      if (ageH != null && isFinite(ageH) && ageH > 36) {
+        text += " · no new photos since";
+        readAt.style.color = "#f97316";
+      }
+      readAt.textContent = text;
+    }
 
     // AI notes
     const notesEl = document.getElementById("gaugeNotes");
-    if (notesEl && d.notes) notesEl.textContent = d.notes;
+    if (notesEl) {
+      const parts = [];
+      if (d.low != null && d.high != null && d.spread >= 0.15) {
+        parts.push(
+          `range ${parseFloat(d.low).toFixed(1)}\u2013${parseFloat(d.high).toFixed(1)} ft`
+          + ` across ${d.images_analyzed || d.readings?.length || 0} photos`
+        );
+      }
+      if (d.notes) parts.push(d.notes);
+      notesEl.textContent = parts.join(" \u00b7 ");
+    }
 
     // Trend indicator
     const trendEl = document.getElementById("gaugeTrend");
     if (trendEl && d.previous_level != null) {
       const diff = Math.round((d.level - d.previous_level) * 100) / 100;
       const abs  = Math.abs(diff);
-      if (abs < 0.1) {
+      if (abs < 0.15) {
         trendEl.textContent = "→ Stable";
         trendEl.style.color = "#9ca3af";
       } else if (diff > 0) {
-        trendEl.textContent = `↑ +${diff.toFixed(2)} ft`;
+        trendEl.textContent = `↑ +${diff.toFixed(1)} ft`;
         trendEl.style.color = "#f97316";
       } else {
-        trendEl.textContent = `↓ ${diff.toFixed(2)} ft`;
+        trendEl.textContent = `↓ ${diff.toFixed(1)} ft`;
         trendEl.style.color = "#22c55e";
       }
     }
