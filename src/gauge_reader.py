@@ -103,6 +103,11 @@ def parse_timestamp(key):
     return parse_stamp(key)[0]
 
 
+def camera_id(key):
+    """Tactacam IMEI, the leading field of the filename."""
+    return key.split("/")[-1].split("-")[0]
+
+
 def select_window(keys, prev_stamp, n):
     """
     Photos to read this run, newest first.
@@ -263,46 +268,86 @@ def confidence_from_spread(spread, n):
     return "low"
 
 
+MIN_KEPT = int(os.environ.get("MIN_KEPT", "2"))
+
+
 def read_consensus(image_list):
     """
     Read each image independently and reduce to a median plus an error bar.
 
-    The spread across images taken minutes apart is the measurement noise, not
-    real river movement. It gets published rather than averaged away.
+    The spread across images taken minutes apart is measurement noise, not real
+    river movement, so it gets published rather than averaged away.
+
+    Frames the model itself flags "low" are dropped when at least MIN_KEPT
+    others survive. In practice those are the pre-dawn and low-sun frames, where
+    the waterline is guesswork — on 2026-09-02 the three low-confidence frames
+    read 1.2-1.3 while the daylight ones read 1.4-1.8. Every sample is still
+    recorded, so nothing is silently discarded.
+
+    Camera id is recorded per sample. Two cameras watch this staff from
+    different angles and appear to disagree by a few tenths; keeping the id
+    makes that bias measurable in the history instead of invisible.
     """
-    readings = []
-    notes_by_level = {}
+    samples = []
 
     for key, ts in image_list:
         filename = key.split("/")[-1]
         try:
             result = ask_claude(fetch_image_bytes(key))
             level = float(result["level"])
-            readings.append(level)
-            notes_by_level[level] = result.get("notes", "")
-            log.info("  %s -> %.2f ft (%s)", filename, level, result.get("confidence", "?"))
+            conf = str(result.get("confidence", "")).strip().lower()
+            samples.append({
+                "file": filename,
+                "camera": camera_id(key),
+                "taken": ts.isoformat() if ts else None,
+                "level": level,
+                "confidence": conf or "unknown",
+                "notes": result.get("notes", ""),
+            })
+            log.info("  %s -> %.2f ft (%s)", filename, level, conf or "?")
         except Exception as e:
             log.warning("  %s -> skipped: %s", filename, e)
 
-    if not readings:
+    if not samples:
         raise RuntimeError("No valid readings obtained from any image")
 
-    readings.sort()
-    median = round_tenth(statistics.median(readings))
-    spread = round(readings[-1] - readings[0], 2)
+    kept = [s for s in samples if s["confidence"] != "low"]
+    if len(kept) < MIN_KEPT:
+        kept = samples
+        if any(s["confidence"] == "low" for s in samples):
+            log.warning("Too few confident frames to filter — keeping all %d.", len(samples))
+    elif len(kept) < len(samples):
+        log.info("Dropped %d low-confidence frame(s): %s",
+                 len(samples) - len(kept),
+                 [s["file"] for s in samples if s["confidence"] == "low"])
 
-    closest = min(readings, key=lambda r: abs(r - median))
+    kept.sort(key=lambda s: s["level"])
+    levels = [s["level"] for s in kept]
+    median = round_tenth(statistics.median(levels))
+    spread = round(levels[-1] - levels[0], 2)
 
-    log.info("Readings: %s -> median %.1f ft (spread %.2f)", readings, median, spread)
+    closest = min(kept, key=lambda s: abs(s["level"] - median))
+
+    by_camera = {}
+    for s in kept:
+        by_camera.setdefault(s["camera"], []).append(s["level"])
+    if len(by_camera) > 1:
+        summary = {c: round(statistics.median(v), 2) for c, v in by_camera.items()}
+        log.info("Per-camera medians: %s", summary)
+
+    log.info("Kept %d/%d: %s -> median %.1f ft (spread %.2f)",
+             len(kept), len(samples), levels, median, spread)
 
     return {
         "level": median,
-        "readings": readings,
-        "low": round_tenth(readings[0]),
-        "high": round_tenth(readings[-1]),
+        "readings": levels,
+        "samples": samples,
+        "cameras": sorted(by_camera),
+        "low": round_tenth(levels[0]),
+        "high": round_tenth(levels[-1]),
         "spread": spread,
-        "confidence": confidence_from_spread(spread, len(readings)),
-        "notes": notes_by_level.get(closest, ""),
+        "confidence": confidence_from_spread(spread, len(levels)),
+        "notes": closest["notes"],
     }
 
 
@@ -447,7 +492,10 @@ def main():
         "previous_level": prev_level,
         "previous_read_at_iso": previous.get("read_at_iso"),
         "readings": result["readings"],
+        "samples": result["samples"],
+        "cameras": result["cameras"],
         "images_analyzed": len(result["readings"]),
+        "images_read": len(result["samples"]),
         "notes": result["notes"],
         "image_url": image_url_for_key(latest_key),
         "image_key": latest_key,
@@ -472,6 +520,8 @@ def main():
         "spread": payload["spread"],
         "confidence": payload["confidence"],
         "readings": payload["readings"],
+        "samples": payload["samples"],
+        "cameras": payload["cameras"],
         "image_key": payload["image_key"],
         "usgs_cfs": payload.get("usgs_cfs"),
         "usgs_stage_ft": payload.get("usgs_stage_ft"),
