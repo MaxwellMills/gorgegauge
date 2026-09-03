@@ -463,33 +463,33 @@ def level_from_geometry(marks, waterline_y):
 
 # -- Per-camera calibration ---------------------------------------------------
 #
-# The cameras do not move, so each whole-foot hashmark sits at a fixed pixel
-# row in every frame from a given camera. Reading the numerals is the one
-# thing the model does badly at this resolution — on 2026-09-02 it read the
-# same 11:53 frame as 0.96 ft and then as 1.8 ft, identical 115 px/ft grid
-# both times, labels shifted by one. With the rows pinned here, the model
-# only has to find where the water meets the staff.
+# The cameras do not move, so from a given camera the staff occupies the same
+# few columns in every frame and each whole-foot hashmark sits on a fixed row.
+# With that pinned down, the waterline can be found from the pixels: the dry
+# staff is bright and unsaturated, the water is not, and the boundary is a
+# cliff in a per-row "whiteness" profile down the staff's column. The staff's
+# reflection continues the white stripe below the surface, but dimmer and
+# tinted, so it sits well under the cliff — which is exactly the thing the
+# model kept mistaking for the waterline.
 #
-# Rows are in the frame size given by "frame" and are scaled to whatever
-# frame arrives (the HD uploads are the same view with more pixels). The
-# model's own mark coordinates are still collected and compared against
-# these rows: if they line up (allowing a whole-number label slip) the
-# calibration is trusted; if they do not, the camera has probably moved and
-# the reading is flagged.
+# Measured 2026-09-02 from a native-resolution copy of frame
+# 865509053179515-20-4-09022026115308-W1004538.JPG: staff column x 349-358,
+# staff top at row 232, numerals 6/5/4 readable at rows ~245/264/282, so
+# 18.5 px per foot, whiteness cliff at rows 338-341 on a day the water was
+# just under the 1 ft mark. Rows here are believed good to about ±3 px,
+# roughly ±0.15 ft. To refine: stand at the river, read the staff by eye at
+# the moment a photo fires, and shift "marks" so the reading matches.
 #
-# Override with CALIBRATION_JSON in the environment. To re-derive after a
-# camera move: take a clean midday frame, run with DRY_RUN=1, read the marks
-# and crop_box/crop_scale out of the printed sample, and map crop y back to
-# frame y as crop_box_y0 - 0.2*box_height + y/crop_scale.
+# Rows and columns scale with frame size, so the 1280x960 HD uploads work
+# unchanged. Override with CALIBRATION_JSON in the environment.
 
 DEFAULT_CALIBRATION = {
-    # Derived 2026-09-02 from frame 865509053179515-20-4-09022026115308-W1004538.JPG:
-    # marks at crop y 95/210/325/440, crop scale 4.29, crop origin y 195,
-    # giving frame rows 217/244/271/298 at 26.8 px/ft. Ground truth that day
-    # was just under 1 ft, which makes those rows the 5/4/3/2 marks.
     "865509053179515": {
         "frame": [880, 660],
-        "marks": {"5": 217.1, "4": 244.0, "3": 270.8, "2": 297.6, "1": 324.4},
+        "staff_x": [349, 358],
+        "staff_top_y": 232,
+        "scan_bottom_y": 430,
+        "marks": {"6": 246.0, "5": 264.5, "4": 283.0, "3": 301.5, "2": 320.0, "1": 338.5},
     },
 }
 
@@ -509,13 +509,19 @@ CAL_SCALE_TOL = float(os.environ.get("CAL_SCALE_TOL", "0.2"))
 
 
 def calibration_for(camera, frame_size):
-    """Fitted (a, b) with frame_y = a + b*value for this camera at this frame size."""
-    cal = CALIBRATION.get(camera)
+    """
+    Calibration for this camera scaled to this frame, or None. Returns a dict
+    with the fitted (a, b) such that frame_y = a + b*value, plus the scaled
+    staff column and scan rows.
+    """
+    cal = CALIBRATION.get(camera) if camera else None
     if not cal or not cal.get("marks"):
         return None
-    ref_h = float(cal.get("frame", [0, 0])[1] or 0)
-    k = (frame_size[1] / ref_h) if ref_h else 1.0
-    pts = sorted((float(v), float(y) * k) for v, y in cal["marks"].items())
+    fw, fh = cal.get("frame", [0, 0])
+    kx = frame_size[0] / float(fw) if fw else 1.0
+    ky = frame_size[1] / float(fh) if fh else 1.0
+
+    pts = sorted((float(v), float(y) * ky) for v, y in cal["marks"].items())
     if len(pts) < 2:
         return None
     n = len(pts)
@@ -523,7 +529,124 @@ def calibration_for(camera, frame_size):
     sxx = sum((v - mx) ** 2 for v, _ in pts)
     sxy = sum((v - mx) * (y - my) for v, y in pts)
     b = sxy / sxx
-    return my - b * mx, b
+    a = my - b * mx
+
+    sx = cal.get("staff_x")
+    return {
+        "a": a, "b": b, "px_per_ft": -b, "ky": ky,
+        "staff_x": (round(sx[0] * kx), round(sx[1] * kx)) if sx else None,
+        "staff_top_y": round(cal["staff_top_y"] * ky) if cal.get("staff_top_y") is not None else None,
+        "scan_bottom_y": round(cal["scan_bottom_y"] * ky) if cal.get("scan_bottom_y") is not None else None,
+        "lowest_mark": min(v for v, _ in pts),
+        "highest_mark": max(v for v, _ in pts),
+    }
+
+
+def level_at(cal, frame_y):
+    return (float(frame_y) - cal["a"]) / cal["b"]
+
+
+def detect_waterline(image_bytes, cal):
+    """
+    Find the waterline from the pixels in the staff's column.
+
+    Whiteness per row = brightness minus saturation, averaged across the
+    column. The dry staff scores high, water and the staff's reflection score
+    much lower. The waterline is the row where the mean whiteness of the ten
+    rows above exceeds the mean of the eight rows below by the most: a
+    one-way step. A dark numeral or hashmark dips and recovers, so it scores
+    poorly; the reflection is dimmer than the staff, so its lower edge scores
+    less than the surface does. The step must clear 30% of the profile's
+    range, or the result is rejected (glare on the water, staff missing).
+
+    Verified 2026-09-02 on a native copy of the 11:53 frame: 0.92 ft, stable
+    at 1280x960, at JPEG q55, at 0.45x and 1.4x brightness; tracks water
+    painted onto the real staff at 1.5/2.5/4.0/5.3 ft within 0.07; rejects
+    the frame when the staff is painted out, the view is shifted 15 px, or
+    the water is as bright as the staff.
+
+    Returns (frame_y, detail) or (None, reason).
+    """
+    from io import BytesIO
+    from PIL import Image
+
+    if not cal or not cal.get("staff_x") or cal.get("staff_top_y") is None:
+        return None, "no staff column in calibration"
+
+    img = Image.open(BytesIO(image_bytes)).convert("RGB")
+    W, H = img.size
+    x0, x1 = cal["staff_x"]
+    y0 = max(0, cal["staff_top_y"])
+    y1 = min(H, cal["scan_bottom_y"] or H)
+    if x1 - x0 < 2 or y1 - y0 < 30:
+        return None, "staff column out of frame"
+
+    def whiteness_rows(bx0, bx1):
+        s = img.crop((bx0, y0, bx1, y1))
+        p = s.load()
+        out = []
+        for y in range(s.height):
+            acc = 0.0
+            for x in range(s.width):
+                r, g, b = p[x, y]
+                acc += (r + g + b) / 3.0 - (max(r, g, b) - min(r, g, b))
+            out.append(acc / s.width)
+        return out
+
+    rows = whiteness_rows(x0, x1)
+
+    # The staff must stand out from the rock either side of it. If it does
+    # not, the camera has moved or something is in the way, and any step we
+    # find would be rock-meets-water, not staff-meets-water.
+    gap = max(3, round(4 * cal["ky"]))
+    wide = max(6, round((x1 - x0) * 1.0))
+    flank = []
+    if x0 - gap - wide >= 0:
+        flank += whiteness_rows(x0 - gap - wide, x0 - gap)
+    if x1 + gap + wide <= W:
+        flank += whiteness_rows(x1 + gap, x1 + gap + wide)
+    if flank:
+        fs = sorted(flank)
+        flank_ref = fs[int(0.9 * (len(fs) - 1))]
+        rs = sorted(rows)
+        col_ref = rs[int(0.9 * (len(rs) - 1))]
+        if col_ref - flank_ref < 0.15 * col_ref:
+            return None, (f"staff column ({col_ref:.0f}) is no whiter than the rock beside it "
+                          f"({flank_ref:.0f}) — camera moved or staff obscured")
+
+    sm = [rows[0]] + [(rows[i - 1] + rows[i] + rows[i + 1]) / 3 for i in range(1, len(rows) - 1)] + [rows[-1]]
+    n = len(sm)
+    srt = sorted(sm)
+    staff_ref = srt[int(0.9 * (n - 1))]
+    water_ref = srt[int(0.1 * (n - 1))]
+    rng = staff_ref - water_ref
+    if rng < 40:
+        return None, (f"no contrast in staff column (staff {staff_ref:.0f}, water {water_ref:.0f}) "
+                      f"— staff not where the calibration expects it, or fully submerged")
+
+    ky = cal["ky"]
+    up = max(6, round(10 * ky))
+    down = max(5, round(8 * ky))
+    best, best_step = None, -1e9
+    for i in range(up, n - down):
+        step = sum(sm[i - up:i]) / up - sum(sm[i + 1:i + 1 + down]) / down
+        if step > best_step:
+            best_step, best = step, i
+    if best is None or best_step < 0.30 * rng:
+        return None, (f"no clear step in profile (best {best_step:.0f} of range {rng:.0f}) "
+                      f"— glare on the water, or staff obscured")
+
+    # Refine to the steepest local drop. If a hashmark sits just above the
+    # surface both edges are steep; take the LOWER one that is at least 60%
+    # as steep as the steepest, since the surface is below the mark.
+    w = max(2, round(4 * ky))
+    lo, hi = max(1, best - w), min(n - 3, best + w + 2)
+    drops = [(rows[i - 1] - rows[i + 2], i) for i in range(lo, hi)]
+    max_drop = max(d for d, _ in drops)
+    ref = max(i for d, i in drops if d >= 0.6 * max_drop)
+    frame_y = y0 + ref + 1.0
+    return frame_y, (f"whiteness staff {staff_ref:.0f} / water {water_ref:.0f}, "
+                     f"step {best_step:.0f} at row {frame_y:.0f}")
 
 
 def check_against_calibration(marks, cal, to_frame):
@@ -537,7 +660,7 @@ def check_against_calibration(marks, cal, to_frame):
     signal that the camera has moved. "no_marks" when there is nothing to
     compare.
     """
-    a, b = cal
+    a, b = cal["a"], cal["b"]
     rows = []
     for m in marks or []:
         try:
@@ -550,7 +673,7 @@ def check_against_calibration(marks, cal, to_frame):
     px_per_ft = -b
     offsets = []
     for v, y in rows:
-        implied = (y - a) / b           # calibration value at this row
+        implied = (y - a) / b
         nearest = round(implied)
         if abs(implied - nearest) > CAL_MATCH_TOL_FT:
             return "mismatch", (f"model mark {v} at frame y={y:.0f} sits {implied:.2f} on the "
@@ -573,24 +696,61 @@ def check_against_calibration(marks, cal, to_frame):
     return "label_shift", f"{len(rows)} marks on grid, model labels off by {-off:+d}"
 
 
+def staff_box_from_calibration(cal, frame_size):
+    """A deterministic crop around the calibrated staff column, no locate pass."""
+    if not cal or not cal.get("staff_x"):
+        return None
+    W, H = frame_size
+    x0, x1 = cal["staff_x"]
+    cx = (x0 + x1) / 2
+    half_w = max(30, (x1 - x0) * 3)
+    top = cal["staff_top_y"] - 15 * cal["ky"]
+    bottom = (cal["scan_bottom_y"] or H)
+    return (max(0, cx - half_w), max(0, top), min(W, cx + half_w), min(H, bottom))
+
+
 def read_one(image_bytes, camera=None):
     """
     Read one photo. Returns a dict with the chosen level, how it was chosen,
-    and everything the model reported, so a bad day is diagnosable.
+    and everything that went into it, so a bad day is diagnosable.
+
+    Calibrated camera: waterline from the pixel profile, level from the
+    calibration, model read of a deterministic crop as a cross-check. If the
+    pixel profile fails, the model's waterline is used with the calibration.
+    Uncalibrated camera (or calibration mismatch): the original locate + read
+    + geometry path.
     """
+    frame = image_size(image_bytes)
+    cal = calibration_for(camera, frame)
+
+    # ---- pixel waterline (calibrated cameras only) ----
+    px_y = px_level = None
+    px_detail = None
+    if cal is not None:
+        try:
+            px_y, px_detail = detect_waterline(image_bytes, cal)
+            if px_y is not None:
+                px_level = level_at(cal, px_y)
+        except Exception as e:
+            px_detail = f"pixel waterline failed: {e}"
+        if px_level is None:
+            log.info("    pixel waterline unavailable: %s", px_detail)
+
+    # ---- model read ----
     box = None
-    try:
-        box = locate_staff(image_bytes)
-    except Exception as e:
-        log.warning("    locate pass failed (%s) — reading the full frame", e)
+    if cal is not None:
+        box = staff_box_from_calibration(cal, frame)
+    else:
+        try:
+            box = locate_staff(image_bytes)
+        except Exception as e:
+            log.warning("    locate pass failed (%s) — reading the full frame", e)
 
     crop_bytes, w, h, scale, origin, frame = crop_and_enlarge(image_bytes, box)
     system = READ_PROMPT_TEMPLATE.format(w=w, h=h)
     result = _ask(system, READ_USER_PROMPT, crop_bytes)
 
-    # A crop that misses the staff comes back with no marks. Try once more on
-    # the whole frame before giving up on the photo.
-    if box is not None and not result.get("marks"):
+    if box is not None and not result.get("marks") and cal is None:
         log.info("    crop showed no marks — retrying on the full frame")
         box = None
         crop_bytes, w, h, scale, origin, frame = crop_and_enlarge(image_bytes, None)
@@ -618,77 +778,85 @@ def read_one(image_bytes, camera=None):
     except (ValueError, KeyError, TypeError):
         pass
 
-    # Calibrated path: the camera's mark rows are known, so only the waterline
-    # is taken from the model. Its marks are used to confirm the camera has
-    # not moved.
-    cal = calibration_for(camera, frame) if camera else None
-    cal_level = cal_status = cal_detail = None
-    if cal is not None and result.get("waterline_y") is not None:
-        try:
-            wy = to_frame(result["waterline_y"])
-            a, b = cal
-            cal_level = (wy - a) / b
-            cal_status, cal_detail = check_against_calibration(result.get("marks"), cal, to_frame)
-        except (TypeError, ValueError):
-            cal_level = None
+    model_wl_y = model_cal_level = None
+    cal_status = cal_detail = None
+    if cal is not None:
+        cal_status, cal_detail = check_against_calibration(result.get("marks"), cal, to_frame)
+        if result.get("waterline_y") is not None:
+            try:
+                model_wl_y = to_frame(result["waterline_y"])
+                model_cal_level = level_at(cal, model_wl_y)
+            except (TypeError, ValueError):
+                pass
 
-    if cal_level is not None and cal_status in ("agree", "label_shift", "no_marks") \
-            and -0.5 <= cal_level <= 6.5:
-        level, method = max(cal_level, 0.0), "calibration"
+    floor = (cal["lowest_mark"] - 1.0) if cal else 0.0
+    ceiling = (cal["highest_mark"] + 0.5) if cal else 6.5
+    camera_moved = cal is not None and cal_status == "mismatch"
+
+    # ---- choose ----
+    if px_level is not None and not camera_moved and floor <= px_level <= ceiling:
+        level, method = px_level, "pixels"
+        if model_cal_level is not None:
+            gap = abs(model_cal_level - px_level)
+            if gap <= 0.3:
+                conf = "high"
+            elif gap <= 0.7:
+                conf = "medium"
+                log.info("    model waterline gives %.2f vs pixels %.2f — keeping pixels",
+                         model_cal_level, px_level)
+            else:
+                conf = "low"
+                log.warning("    model waterline gives %.2f vs pixels %.2f — keeping pixels, "
+                            "low confidence", model_cal_level, px_level)
+        else:
+            conf = "medium"
+    elif model_cal_level is not None and not camera_moved and floor <= model_cal_level <= ceiling:
+        level, method = model_cal_level, "calibration"
+        conf = "low" if cal_status == "no_marks" else ("medium" if conf == "high" else conf)
         if cal_status == "label_shift":
             log.info("    %s — calibration says %.2f, model's own labels gave %s",
-                     cal_detail, cal_level,
+                     cal_detail, model_cal_level,
                      f"{geom_level:.2f}" if geom_level is not None else "nothing")
-        if cal_status == "no_marks":
-            conf = "low"
     elif geom_level is not None and 0.0 <= geom_level <= 6.5:
         level, method = geom_level, "geometry"
-        if cal_status == "mismatch":
+        if camera_moved:
             log.warning("    CALIBRATION MISMATCH for camera %s: %s — camera may have moved; "
                         "using model geometry, low confidence", camera, cal_detail)
             conf = "low"
-        # Two marks give a scale but no redundancy: a single mislabeled mark
-        # shifts the answer by a whole foot with nothing to catch it. That is
-        # what a 0.02 ft reading from two marks looked like on 2026-09-02.
         if n_marks < 3:
             conf = "low"
-        # If the water is far below the lowest mark the model could read, it
-        # most likely skipped a readable mark or mislabeled one.
         if lowest_mark is not None and lowest_mark - geom_level > 1.6:
-            log.info("    level %.2f is %.1f ft below the lowest read mark (%d) — capping confidence",
-                     geom_level, lowest_mark - geom_level, lowest_mark)
             conf = "low"
         if model_level is not None and abs(model_level - geom_level) > 0.4:
-            # The model's arithmetic disagrees with its own coordinates. Trust
-            # the coordinates, but say so and knock the confidence down.
-            log.info("    model said %.2f, geometry says %.2f (%s) — using geometry",
-                     model_level, geom_level, reason)
             conf = "low" if conf == "high" else conf
     elif model_level is not None:
         level, method = model_level, "model"
         conf = "low"
-        log.info("    geometry unusable (%s) — falling back to model estimate %.2f",
-                 reason, model_level)
     else:
         raise ValueError(f"no usable level in response: {result!r}")
+
+    level = max(level, 0.0)
 
     return {
         "level": round(level, 2),
         "method": method,
         "confidence": conf,
         "notes": result.get("notes", ""),
+        "pixel_level": round(px_level, 2) if px_level is not None else None,
+        "pixel_waterline_y": round(px_y, 1) if px_y is not None else None,
+        "pixel_detail": px_detail,
         "model_level": model_level,
-        "geometry_level": round(geom_level, 2) if geom_level is not None else None,
-        "calibration_level": round(cal_level, 2) if cal_level is not None else None,
+        "model_waterline_y": round(model_wl_y, 1) if model_wl_y is not None else None,
+        "calibration_level": round(model_cal_level, 2) if model_cal_level is not None else None,
         "calibration_check": cal_detail,
-        "waterline_frame_y": round(to_frame(result["waterline_y"]), 1)
-            if result.get("waterline_y") is not None else None,
+        "geometry_level": round(geom_level, 2) if geom_level is not None else None,
         "px_per_ft": round(px_per_ft, 1) if px_per_ft else None,
         "geometry_note": reason,
         "marks": result.get("marks"),
         "waterline_y": result.get("waterline_y"),
         "crop_box": [round(v) for v in box] if box else None,
         "crop_scale": round(scale, 2),
+        "frame": list(frame),
     }
 
 
