@@ -565,13 +565,14 @@ def detect_waterline(image_bytes, cal):
     the frame when the staff is painted out, the view is shifted 15 px, or
     the water is as bright as the staff.
 
-    Returns (frame_y, detail) or (None, reason).
+    Returns (frame_y, detail, quality) or (None, reason, 0.0), where quality
+    is the step as a fraction of the profile's range (0.30 is the floor).
     """
     from io import BytesIO
     from PIL import Image
 
     if not cal or not cal.get("staff_x") or cal.get("staff_top_y") is None:
-        return None, "no staff column in calibration"
+        return None, "no staff column in calibration", 0.0
 
     img = Image.open(BytesIO(image_bytes)).convert("RGB")
     W, H = img.size
@@ -579,7 +580,7 @@ def detect_waterline(image_bytes, cal):
     y0 = max(0, cal["staff_top_y"])
     y1 = min(H, cal["scan_bottom_y"] or H)
     if x1 - x0 < 2 or y1 - y0 < 30:
-        return None, "staff column out of frame"
+        return None, "staff column out of frame", 0.0
 
     def whiteness_rows(bx0, bx1):
         s = img.crop((bx0, y0, bx1, y1))
@@ -612,7 +613,7 @@ def detect_waterline(image_bytes, cal):
         col_ref = rs[int(0.9 * (len(rs) - 1))]
         if col_ref - flank_ref < 0.15 * col_ref:
             return None, (f"staff column ({col_ref:.0f}) is no whiter than the rock beside it "
-                          f"({flank_ref:.0f}) — camera moved or staff obscured")
+                          f"({flank_ref:.0f}) — camera moved or staff obscured"), 0.0
 
     sm = [rows[0]] + [(rows[i - 1] + rows[i] + rows[i + 1]) / 3 for i in range(1, len(rows) - 1)] + [rows[-1]]
     n = len(sm)
@@ -622,7 +623,7 @@ def detect_waterline(image_bytes, cal):
     rng = staff_ref - water_ref
     if rng < 40:
         return None, (f"no contrast in staff column (staff {staff_ref:.0f}, water {water_ref:.0f}) "
-                      f"— staff not where the calibration expects it, or fully submerged")
+                      f"— staff not where the calibration expects it, or fully submerged"), 0.0
 
     ky = cal["ky"]
     up = max(6, round(10 * ky))
@@ -634,7 +635,7 @@ def detect_waterline(image_bytes, cal):
             best_step, best = step, i
     if best is None or best_step < 0.30 * rng:
         return None, (f"no clear step in profile (best {best_step:.0f} of range {rng:.0f}) "
-                      f"— glare on the water, or staff obscured")
+                      f"— glare on the water, or staff obscured"), 0.0
 
     # Refine to the steepest local drop. If a hashmark sits just above the
     # surface both edges are steep; take the LOWER one that is at least 60%
@@ -646,7 +647,7 @@ def detect_waterline(image_bytes, cal):
     ref = max(i for d, i in drops if d >= 0.6 * max_drop)
     frame_y = y0 + ref + 1.0
     return frame_y, (f"whiteness staff {staff_ref:.0f} / water {water_ref:.0f}, "
-                     f"step {best_step:.0f} at row {frame_y:.0f}")
+                     f"step {best_step:.0f} at row {frame_y:.0f}"), best_step / rng
 
 
 def check_against_calibration(marks, cal, to_frame):
@@ -714,29 +715,55 @@ def read_one(image_bytes, camera=None):
     Read one photo. Returns a dict with the chosen level, how it was chosen,
     and everything that went into it, so a bad day is diagnosable.
 
-    Calibrated camera: waterline from the pixel profile, level from the
-    calibration, model read of a deterministic crop as a cross-check. If the
-    pixel profile fails, the model's waterline is used with the calibration.
-    Uncalibrated camera (or calibration mismatch): the original locate + read
-    + geometry path.
+    Calibrated camera: the waterline comes from the pixel profile and the
+    level from the calibration. That is the answer; the model is not asked.
+    Confidence comes from how clean the step is. The model is consulted only
+    when the pixel path cannot read the frame (staff obscured, glare, camera
+    moved), and then its waterline is converted with the calibration if its
+    marks fit the grid, or its own geometry is used if they do not.
+
+    On 2026-09-02 the model's mark coordinates on this camera were off by a
+    constant ~1.45x on every frame, which made them useless as a camera-moved
+    check — they vetoed four correct pixel readings (1.03/0.91/0.97/0.97).
+    The pixel path carries its own camera-moved check (the staff column must
+    stand out from the rock beside it), so the model no longer gets a veto.
+
+    Uncalibrated camera: locate + read + geometry, as before.
     """
     frame = image_size(image_bytes)
     cal = calibration_for(camera, frame)
 
-    # ---- pixel waterline (calibrated cameras only) ----
-    px_y = px_level = None
-    px_detail = None
+    floor = (cal["lowest_mark"] - 1.0) if cal else 0.0
+    ceiling = (cal["highest_mark"] + 0.5) if cal else 6.5
+
+    # ---- pixel path (calibrated cameras) ----
     if cal is not None:
         try:
-            px_y, px_detail = detect_waterline(image_bytes, cal)
-            if px_y is not None:
-                px_level = level_at(cal, px_y)
+            px_y, px_detail, px_q = detect_waterline(image_bytes, cal)
         except Exception as e:
-            px_detail = f"pixel waterline failed: {e}"
-        if px_level is None:
-            log.info("    pixel waterline unavailable: %s", px_detail)
+            px_y, px_detail, px_q = None, f"pixel waterline failed: {e}", 0.0
+        if px_y is not None:
+            px_level = level_at(cal, px_y)
+            if floor <= px_level <= ceiling:
+                conf = "high" if px_q >= 0.42 else "medium"
+                return {
+                    "level": round(max(px_level, 0.0), 2),
+                    "method": "pixels",
+                    "confidence": conf,
+                    "notes": f"waterline from the pixel profile at row {px_y:.0f} ({px_detail})",
+                    "pixel_level": round(px_level, 2),
+                    "pixel_waterline_y": round(px_y, 1),
+                    "pixel_detail": px_detail,
+                    "pixel_quality": round(px_q, 2),
+                    "frame": list(frame),
+                }
+            px_detail = f"pixel level {px_level:.2f} outside {floor:.1f}..{ceiling:.1f} — {px_detail}"
+        log.info("    pixel waterline unavailable: %s — asking the model", px_detail)
+    else:
+        px_y = px_detail = None
+        px_q = 0.0
 
-    # ---- model read ----
+    # ---- model path ----
     box = None
     if cal is not None:
         box = staff_box_from_calibration(cal, frame)
@@ -770,7 +797,6 @@ def read_one(image_bytes, camera=None):
         result.get("marks"), result.get("waterline_y"))
 
     conf = str(result.get("confidence", "")).strip().lower() or "unknown"
-
     n_marks = len([m for m in (result.get("marks") or []) if isinstance(m, dict)])
     lowest_mark = None
     try:
@@ -789,39 +815,19 @@ def read_one(image_bytes, camera=None):
             except (TypeError, ValueError):
                 pass
 
-    floor = (cal["lowest_mark"] - 1.0) if cal else 0.0
-    ceiling = (cal["highest_mark"] + 0.5) if cal else 6.5
-    camera_moved = cal is not None and cal_status == "mismatch"
-
-    # ---- choose ----
-    if px_level is not None and not camera_moved and floor <= px_level <= ceiling:
-        level, method = px_level, "pixels"
-        if model_cal_level is not None:
-            gap = abs(model_cal_level - px_level)
-            if gap <= 0.3:
-                conf = "high"
-            elif gap <= 0.7:
-                conf = "medium"
-                log.info("    model waterline gives %.2f vs pixels %.2f — keeping pixels",
-                         model_cal_level, px_level)
-            else:
-                conf = "low"
-                log.warning("    model waterline gives %.2f vs pixels %.2f — keeping pixels, "
-                            "low confidence", model_cal_level, px_level)
-        else:
-            conf = "medium"
-    elif model_cal_level is not None and not camera_moved and floor <= model_cal_level <= ceiling:
+    if model_cal_level is not None and cal_status in ("agree", "label_shift") \
+            and floor <= model_cal_level <= ceiling:
         level, method = model_cal_level, "calibration"
-        conf = "low" if cal_status == "no_marks" else ("medium" if conf == "high" else conf)
+        conf = "medium" if conf == "high" else conf
         if cal_status == "label_shift":
             log.info("    %s — calibration says %.2f, model's own labels gave %s",
                      cal_detail, model_cal_level,
                      f"{geom_level:.2f}" if geom_level is not None else "nothing")
     elif geom_level is not None and 0.0 <= geom_level <= 6.5:
         level, method = geom_level, "geometry"
-        if camera_moved:
-            log.warning("    CALIBRATION MISMATCH for camera %s: %s — camera may have moved; "
-                        "using model geometry, low confidence", camera, cal_detail)
+        if cal is not None:
+            log.warning("    pixels and calibration both unusable (%s / %s) — model geometry, "
+                        "low confidence", px_detail, cal_detail)
             conf = "low"
         if n_marks < 3:
             conf = "low"
@@ -835,16 +841,15 @@ def read_one(image_bytes, camera=None):
     else:
         raise ValueError(f"no usable level in response: {result!r}")
 
-    level = max(level, 0.0)
-
     return {
-        "level": round(level, 2),
+        "level": round(max(level, 0.0), 2),
         "method": method,
         "confidence": conf,
         "notes": result.get("notes", ""),
-        "pixel_level": round(px_level, 2) if px_level is not None else None,
-        "pixel_waterline_y": round(px_y, 1) if px_y is not None else None,
+        "pixel_level": None,
+        "pixel_waterline_y": None,
         "pixel_detail": px_detail,
+        "pixel_quality": 0.0,
         "model_level": model_level,
         "model_waterline_y": round(model_wl_y, 1) if model_wl_y is not None else None,
         "calibration_level": round(model_cal_level, 2) if model_cal_level is not None else None,
