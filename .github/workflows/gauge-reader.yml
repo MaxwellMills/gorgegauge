@@ -9,6 +9,10 @@ on:
         description: "Read the gauge and print the result without writing to S3"
         type: boolean
         default: false
+      reread:
+        description: "Ignore the previous run's cutoff and re-read the newest photos"
+        type: boolean
+        default: false
 
 jobs:
   read-gauge:
@@ -38,6 +42,7 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           DRY_RUN: ${{ inputs.dry_run }}
+          REREAD: ${{ inputs.reread }}
         run: python3 -m src.gauge_reader
 
       - name: Rebuild image index

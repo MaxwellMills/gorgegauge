@@ -61,6 +61,10 @@ USGS_SITE      = os.environ.get("USGS_SITE", "14123500")
 
 DRY_RUN = os.environ.get("DRY_RUN", "").strip().lower() in ("1", "true", "yes", "on")
 
+# Ignore the previous run's cutoff and read the newest IMAGE_COUNT exposures
+# regardless. For re-reading after a reader change, not for daily use.
+REREAD = os.environ.get("REREAD", "").strip().lower() in ("1", "true", "yes", "on")
+
 PUBLIC_IMAGE_BASE = os.environ.get(
     "PUBLIC_IMAGE_BASE",
     "https://gorgewhitewater.s3.us-east-2.amazonaws.com"
@@ -108,6 +112,47 @@ def camera_id(key):
     return key.split("/")[-1].split("-")[0]
 
 
+def photo_serial(key):
+    """
+    The camera's own photo counter, last four digits of the final token:
+    W1004540 and SYEW4540 are the same exposure. Tactacam uploads a small
+    frame first and, on request, an HD copy of the same exposure later under
+    a new filename whose timestamp is the request time, not the capture time.
+    """
+    stem = key.split("/")[-1].rsplit(".", 1)[0]
+    m = re.search(r"(\d{4})$", stem.split("-")[-1])
+    return m.group(1) if m else None
+
+
+def is_hd(key):
+    return "-HD-" in key.split("/")[-1].upper()
+
+
+def dedupe_exposures(dated):
+    """
+    Collapse each exposure to one entry: (key_to_read, capture_time). The HD
+    copy is read when there is one; the capture time is the earliest stamp in
+    the group, so an HD re-upload never masquerades as a newer photo.
+    """
+    groups = {}
+    for k, t in dated:
+        serial = photo_serial(k)
+        gid = (camera_id(k), t.strftime("%m%d%Y"), serial) if serial else (k,)
+        groups.setdefault(gid, []).append((k, t))
+
+    out = []
+    for members in groups.values():
+        capture = min(t for _, t in members)
+        hd = [k for k, _ in members if is_hd(k)]
+        pick = hd[0] if hd else min(members, key=lambda x: x[1])[0]
+        if len(members) > 1:
+            log.info("  exposure %s: %d uploads, reading %s (captured %s)",
+                     photo_serial(pick), len(members), pick.split("/")[-1], capture)
+        out.append((pick, capture))
+    out.sort(key=lambda x: x[1], reverse=True)
+    return out
+
+
 def select_window(keys, prev_stamp, n):
     """
     Photos to read this run, newest first.
@@ -119,7 +164,7 @@ def select_window(keys, prev_stamp, n):
     """
     dated = [(k, parse_timestamp(k)) for k in keys]
     dated = [(k, t) for k, t in dated if t]
-    dated.sort(key=lambda x: x[1], reverse=True)
+    dated = dedupe_exposures(dated)      # newest capture first
 
     if not dated:
         return []
@@ -201,9 +246,11 @@ READ_PROMPT_TEMPLATE = (
 
     "STAFF LAYOUT: "
     "A white staff with a wide black hashmark at each whole foot and narrow hashmarks every "
-    "0.25 ft between them. Whole-foot numbers run 6 at the top down to 1 at the bottom. Each "
-    "number is printed just ABOVE the wide hashmark it names. The spacing between whole-foot "
-    "hashmarks is identical all the way down the staff. "
+    "0.25 ft between them. Whole-foot numbers increase going UP the staff. Each number is "
+    "printed just ABOVE the wide hashmark it names. The spacing between whole-foot hashmarks "
+    "is identical all the way down the staff. Do NOT assume which numbers are in view: the "
+    "top of the staff may be out of frame, and the topmost visible mark is not necessarily "
+    "the highest number on the staff. Report only numerals you can actually read. "
 
     "THE STAFF IS ITS OWN RULER. Read it this way: "
     "1. Find every whole-foot HASHMARK (the wide line, not the numeral above it) whose number "
@@ -318,7 +365,9 @@ def locate_staff(image_bytes):
 def crop_and_enlarge(image_bytes, box):
     """
     Pad the located box, crop, and enlarge with a smooth resampler. Returns
-    (jpeg_bytes, width, height, scale). Falls back to the full frame if the
+    (jpeg_bytes, width, height, scale, origin, frame_size), where origin is
+    the crop's top-left in full-frame pixels, so a y in the crop maps back to
+    the frame as origin_y + y / scale. Falls back to the full frame if the
     box is degenerate.
     """
     from io import BytesIO
@@ -326,6 +375,7 @@ def crop_and_enlarge(image_bytes, box):
 
     img = Image.open(BytesIO(image_bytes)).convert("RGB")
     W, H = img.size
+    origin = (0, 0)
 
     if box is None:
         crop = img
@@ -341,6 +391,7 @@ def crop_and_enlarge(image_bytes, box):
             crop, scale = img, 1.0
         else:
             crop = img.crop((x0, y0, x1, y1))
+            origin = (x0, y0)
             scale = max(1.0, min(CROP_MAX_SCALE, CROP_TARGET_H / crop.height))
 
     if scale > 1.0:
@@ -349,7 +400,7 @@ def crop_and_enlarge(image_bytes, box):
 
     out = BytesIO()
     crop.save(out, format="JPEG", quality=92)
-    return out.getvalue(), crop.width, crop.height, scale
+    return out.getvalue(), crop.width, crop.height, scale, origin, (W, H)
 
 
 def level_from_geometry(marks, waterline_y):
@@ -410,7 +461,119 @@ def level_from_geometry(marks, waterline_y):
     return level, px_per_ft, f"{n} marks, {px_per_ft:.0f} px/ft"
 
 
-def read_one(image_bytes):
+# -- Per-camera calibration ---------------------------------------------------
+#
+# The cameras do not move, so each whole-foot hashmark sits at a fixed pixel
+# row in every frame from a given camera. Reading the numerals is the one
+# thing the model does badly at this resolution — on 2026-09-02 it read the
+# same 11:53 frame as 0.96 ft and then as 1.8 ft, identical 115 px/ft grid
+# both times, labels shifted by one. With the rows pinned here, the model
+# only has to find where the water meets the staff.
+#
+# Rows are in the frame size given by "frame" and are scaled to whatever
+# frame arrives (the HD uploads are the same view with more pixels). The
+# model's own mark coordinates are still collected and compared against
+# these rows: if they line up (allowing a whole-number label slip) the
+# calibration is trusted; if they do not, the camera has probably moved and
+# the reading is flagged.
+#
+# Override with CALIBRATION_JSON in the environment. To re-derive after a
+# camera move: take a clean midday frame, run with DRY_RUN=1, read the marks
+# and crop_box/crop_scale out of the printed sample, and map crop y back to
+# frame y as crop_box_y0 - 0.2*box_height + y/crop_scale.
+
+DEFAULT_CALIBRATION = {
+    # Derived 2026-09-02 from frame 865509053179515-20-4-09022026115308-W1004538.JPG:
+    # marks at crop y 95/210/325/440, crop scale 4.29, crop origin y 195,
+    # giving frame rows 217/244/271/298 at 26.8 px/ft. Ground truth that day
+    # was just under 1 ft, which makes those rows the 5/4/3/2 marks.
+    "865509053179515": {
+        "frame": [880, 660],
+        "marks": {"5": 217.1, "4": 244.0, "3": 270.8, "2": 297.6, "1": 324.4},
+    },
+}
+
+def load_calibration():
+    raw = os.environ.get("CALIBRATION_JSON", "").strip()
+    if not raw:
+        return DEFAULT_CALIBRATION
+    try:
+        return json.loads(raw)
+    except ValueError as e:
+        log.warning("CALIBRATION_JSON is not valid JSON (%s) — using defaults", e)
+        return DEFAULT_CALIBRATION
+
+CALIBRATION = load_calibration()
+CAL_MATCH_TOL_FT = float(os.environ.get("CAL_MATCH_TOL_FT", "0.3"))
+CAL_SCALE_TOL = float(os.environ.get("CAL_SCALE_TOL", "0.2"))
+
+
+def calibration_for(camera, frame_size):
+    """Fitted (a, b) with frame_y = a + b*value for this camera at this frame size."""
+    cal = CALIBRATION.get(camera)
+    if not cal or not cal.get("marks"):
+        return None
+    ref_h = float(cal.get("frame", [0, 0])[1] or 0)
+    k = (frame_size[1] / ref_h) if ref_h else 1.0
+    pts = sorted((float(v), float(y) * k) for v, y in cal["marks"].items())
+    if len(pts) < 2:
+        return None
+    n = len(pts)
+    mx = sum(v for v, _ in pts) / n; my = sum(y for _, y in pts) / n
+    sxx = sum((v - mx) ** 2 for v, _ in pts)
+    sxy = sum((v - mx) * (y - my) for v, y in pts)
+    b = sxy / sxx
+    return my - b * mx, b
+
+
+def check_against_calibration(marks, cal, to_frame):
+    """
+    Compare the model's reported marks with the calibration.
+
+    Returns (status, detail). status is "agree" when the model's rows land on
+    calibration rows with consistent labels, "label_shift" when they land on
+    calibration rows but every label is off by the same whole number, or
+    "mismatch" when the rows do not fit the calibration grid at all — the
+    signal that the camera has moved. "no_marks" when there is nothing to
+    compare.
+    """
+    a, b = cal
+    rows = []
+    for m in marks or []:
+        try:
+            rows.append((int(float(m["value"])), to_frame(float(m["y"]))))
+        except (KeyError, TypeError, ValueError):
+            continue
+    if not rows:
+        return "no_marks", "model reported no marks"
+
+    px_per_ft = -b
+    offsets = []
+    for v, y in rows:
+        implied = (y - a) / b           # calibration value at this row
+        nearest = round(implied)
+        if abs(implied - nearest) > CAL_MATCH_TOL_FT:
+            return "mismatch", (f"model mark {v} at frame y={y:.0f} sits {implied:.2f} on the "
+                                f"calibration grid, not on a mark")
+        offsets.append(nearest - v)
+
+    if len(rows) >= 2:
+        rs = sorted(rows, key=lambda r: -r[0])
+        local = [(rs[i + 1][1] - rs[i][1]) / (rs[i][0] - rs[i + 1][0]) for i in range(len(rs) - 1)]
+        mean_local = sum(local) / len(local)
+        if abs(mean_local - px_per_ft) > CAL_SCALE_TOL * px_per_ft:
+            return "mismatch", (f"model spacing {mean_local:.1f} px/ft vs calibration "
+                                f"{px_per_ft:.1f} px/ft")
+
+    if len(set(offsets)) > 1:
+        return "mismatch", f"inconsistent label offsets {offsets}"
+    off = offsets[0]
+    if off == 0:
+        return "agree", f"{len(rows)} marks on grid, labels agree"
+    return "label_shift", f"{len(rows)} marks on grid, model labels off by {-off:+d}"
+
+
+def read_one(image_bytes, camera=None):
     """
     Read one photo. Returns a dict with the chosen level, how it was chosen,
     and everything the model reported, so a bad day is diagnosable.
@@ -421,7 +584,7 @@ def read_one(image_bytes):
     except Exception as e:
         log.warning("    locate pass failed (%s) — reading the full frame", e)
 
-    crop_bytes, w, h, scale = crop_and_enlarge(image_bytes, box)
+    crop_bytes, w, h, scale, origin, frame = crop_and_enlarge(image_bytes, box)
     system = READ_PROMPT_TEMPLATE.format(w=w, h=h)
     result = _ask(system, READ_USER_PROMPT, crop_bytes)
 
@@ -430,9 +593,12 @@ def read_one(image_bytes):
     if box is not None and not result.get("marks"):
         log.info("    crop showed no marks — retrying on the full frame")
         box = None
-        crop_bytes, w, h, scale = crop_and_enlarge(image_bytes, None)
+        crop_bytes, w, h, scale, origin, frame = crop_and_enlarge(image_bytes, None)
         system = READ_PROMPT_TEMPLATE.format(w=w, h=h)
         result = _ask(system, READ_USER_PROMPT, crop_bytes)
+
+    def to_frame(y):
+        return origin[1] + float(y) / scale
 
     model_level = result.get("level")
     try:
@@ -452,8 +618,35 @@ def read_one(image_bytes):
     except (ValueError, KeyError, TypeError):
         pass
 
-    if geom_level is not None and 0.0 <= geom_level <= 6.5:
+    # Calibrated path: the camera's mark rows are known, so only the waterline
+    # is taken from the model. Its marks are used to confirm the camera has
+    # not moved.
+    cal = calibration_for(camera, frame) if camera else None
+    cal_level = cal_status = cal_detail = None
+    if cal is not None and result.get("waterline_y") is not None:
+        try:
+            wy = to_frame(result["waterline_y"])
+            a, b = cal
+            cal_level = (wy - a) / b
+            cal_status, cal_detail = check_against_calibration(result.get("marks"), cal, to_frame)
+        except (TypeError, ValueError):
+            cal_level = None
+
+    if cal_level is not None and cal_status in ("agree", "label_shift", "no_marks") \
+            and -0.5 <= cal_level <= 6.5:
+        level, method = max(cal_level, 0.0), "calibration"
+        if cal_status == "label_shift":
+            log.info("    %s — calibration says %.2f, model's own labels gave %s",
+                     cal_detail, cal_level,
+                     f"{geom_level:.2f}" if geom_level is not None else "nothing")
+        if cal_status == "no_marks":
+            conf = "low"
+    elif geom_level is not None and 0.0 <= geom_level <= 6.5:
         level, method = geom_level, "geometry"
+        if cal_status == "mismatch":
+            log.warning("    CALIBRATION MISMATCH for camera %s: %s — camera may have moved; "
+                        "using model geometry, low confidence", camera, cal_detail)
+            conf = "low"
         # Two marks give a scale but no redundancy: a single mislabeled mark
         # shifts the answer by a whole foot with nothing to catch it. That is
         # what a 0.02 ft reading from two marks looked like on 2026-09-02.
@@ -486,6 +679,10 @@ def read_one(image_bytes):
         "notes": result.get("notes", ""),
         "model_level": model_level,
         "geometry_level": round(geom_level, 2) if geom_level is not None else None,
+        "calibration_level": round(cal_level, 2) if cal_level is not None else None,
+        "calibration_check": cal_detail,
+        "waterline_frame_y": round(to_frame(result["waterline_y"]), 1)
+            if result.get("waterline_y") is not None else None,
         "px_per_ft": round(px_per_ft, 1) if px_per_ft else None,
         "geometry_note": reason,
         "marks": result.get("marks"),
@@ -564,7 +761,7 @@ def read_consensus(image_list):
     for key, ts in image_list:
         filename = key.split("/")[-1]
         try:
-            r = read_one(fetch_image_bytes(key))
+            r = read_one(fetch_image_bytes(key), camera_id(key))
             sample = {
                 "file": filename,
                 "camera": camera_id(key),
@@ -740,6 +937,9 @@ def main():
 
     previous = read_previous()
     prev_stamp = previous.get("newest_image_stamp")
+    if REREAD and prev_stamp:
+        log.info("REREAD is set — ignoring previous cutoff %s", prev_stamp)
+        prev_stamp = None
 
     window = select_window(keys, prev_stamp, IMAGE_COUNT)
     if not window:
@@ -762,7 +962,7 @@ def main():
                  prev_level, result["level"], result["level"] - prev_level)
 
     latest_key, photo_ts = window[0]
-    newest_stamp = parse_stamp(latest_key)[1]
+    newest_stamp = photo_ts.strftime(STAMP_FMT)
     now_pacific = datetime.now(PACIFIC)
 
     payload = {
