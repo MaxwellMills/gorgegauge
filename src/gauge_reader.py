@@ -163,93 +163,285 @@ def image_url_for_key(key):
 
 
 # -- Claude reading -----------------------------------------------------------
+#
+# Two passes per photo.
+#
+#   Pass 1 looks at the full 880x660 frame and returns a bounding box for the
+#   staff. The box is padded, cropped, and enlarged so the staff fills the
+#   frame at several hundred pixels tall instead of ~120. Most of the reading
+#   error was simply that 0.1 ft was three pixels.
+#
+#   Pass 2 reads the enlarged crop. It does not ask the model to guess "what
+#   fraction of a foot" the water sits below a mark — that guess is what put
+#   the reading at 1.4-1.8 ft on a day the water was just under 1.0. Instead
+#   it asks for the pixel row of every whole-foot hashmark it can read, plus
+#   the row of the waterline. Two readable marks a known number of feet apart
+#   give the pixel-per-foot scale, and the waterline's distance below the
+#   lowest readable mark converts to feet with arithmetic, in code, where it
+#   can be checked. The model's own estimate is kept alongside as a fallback
+#   and a cross-check.
 
-SYSTEM_PROMPT = (
-    "You are reading a river staff gauge at Husum Falls on the White Salmon River, WA. "
-
-    "PHYSICAL LAYOUT: "
-    "A white staff mounted against the rock face, running down into the water. "
-    "Wide horizontal hashmarks at each whole foot, narrow hashmarks every 0.25 ft. "
-    "Whole-foot numbers run 6 at the top down to 1 at the bottom. "
-    "Each number label is printed just ABOVE the hashmark it belongs to. "
-
-    "WHAT A VISIBLE LABEL DOES AND DOES NOT TELL YOU: "
-    "Because a label sits above its hashmark, it stays dry and readable even after the "
-    "water has dropped well below that mark. So seeing the '2' above the waterline means "
-    "only that the water is somewhere below the top of the '2' label. It is an UPPER bound. "
-    "It establishes NO lower bound. Never treat a visible label as a floor. Readings below "
-    "the lowest visible number are normal and expected at low summer flow. "
-
-    "METHOD - measure downward from the mark above the water: "
-    "1. Find the waterline: where the river surface crosses the staff. "
-    "2. Find the nearest WIDE (whole-foot) hashmark ABOVE the waterline. It is dry and "
-    "   clearly visible. Call its value N, which is the number printed just above it. "
-    "3. The next wide hashmark down is N-1. It may be underwater, obscured, or past the "
-    "   bottom of the staff. If you cannot see it, use the spacing between the wide marks "
-    "   higher up the staff, which is constant. "
-    "4. Estimate how far BELOW the N hashmark the waterline sits, as a fraction of that "
-    "   one-foot spacing. 0% means right at the N mark, 100% means down at the N-1 mark. "
-    "5. level = N - fraction. "
-    "   Example: nearest dry whole-foot mark is 4, waterline sits 30% of a foot below it "
-    "   -> 3.7 ft. "
-    "   Example: nearest dry whole-foot mark is 2, waterline sits 40% of a foot below it "
-    "   -> 1.6 ft. "
-    "6. Check: your answer must be less than N and greater than N-1. "
-
-    "Measure against the HASHMARKS, not the printed numbers. The numbers only tell you "
-    "which hashmark is which. "
-
-    "OFF THE BOTTOM: if the waterline is below the lowest hashmark on the staff, return "
-    "that lowest hashmark value, set confidence to \"low\", and say in the notes that the "
-    "water is off the bottom of the scale. "
-
-    "PERSPECTIVE: the staff is not perfectly vertical in the frame and is viewed from an "
-    "angle across the river. Measure along the staff itself, not against image horizontal. "
-
-    "RESOLUTION: the photo is 880x660 and the staff spans roughly 30 pixels per foot, so "
-    "0.1 ft is about 3 pixels. Report to the nearest 0.1 ft and claim no more precision "
-    "than that. Use confidence \"low\" when glare, foam, shadow or reflection break up the "
-    "waterline, and \"high\" only when the waterline crosses the staff cleanly. "
-
-    "PLAUSIBLE RANGE: 0.5 to 6.0 ft. Only re-examine if you land outside that. "
-
+LOCATE_PROMPT = (
+    "This is a trail-camera photo of a river. Somewhere in it is a white vertical staff "
+    "gauge with black hashmarks and numbers, mounted against the rock and running down into "
+    "the water. Return the bounding box of the staff in pixel coordinates of this image, "
+    "x increasing to the right and y increasing downward, from the top of the staff down to "
+    "where it meets the water. Be generous rather than tight. "
     "Respond ONLY with raw JSON, no markdown: "
-    "{\"level\": 3.7, \"confidence\": \"medium\", \"notes\": \"4 ft hashmark is the nearest dry "
-    "whole-foot mark; waterline sits about 30% of a foot below it\"}"
+    "{\"x0\": 410, \"y0\": 230, \"x1\": 470, \"y1\": 390, \"found\": true}. "
+    "If there is no staff visible, respond {\"found\": false}."
 )
 
-USER_PROMPT = (
-    "Read the gauge. Work downward from the nearest whole-foot hashmark above the "
-    "waterline. A visible number label is an upper bound, never a floor. Return JSON only."
+READ_PROMPT_TEMPLATE = (
+    "You are reading a river staff gauge at Husum Falls on the White Salmon River, WA. "
+    "This image is a cropped and enlarged view of the staff, {w} pixels wide by {h} pixels "
+    "tall. Every coordinate you report is a pixel position in THIS image, y increasing "
+    "downward. "
+
+    "STAFF LAYOUT: "
+    "A white staff with a wide black hashmark at each whole foot and narrow hashmarks every "
+    "0.25 ft between them. Whole-foot numbers run 6 at the top down to 1 at the bottom. Each "
+    "number is printed just ABOVE the wide hashmark it names. The spacing between whole-foot "
+    "hashmarks is identical all the way down the staff. "
+
+    "THE STAFF IS ITS OWN RULER. Read it this way: "
+    "1. Find every whole-foot HASHMARK (the wide line, not the numeral above it) whose number "
+    "   you can read with confidence. For each, report the number and the y pixel of the line. "
+    "   Include as many as you can read; the more marks, the better the scale. "
+    "2. Find the waterline: the y pixel where the water surface meets the staff. If the "
+    "   surface is broken up, use the middle of the band. "
+    "3. Take the two readable marks farthest apart, A above and B below. The pixel distance "
+    "   between them is exactly (A minus B) feet, which gives you pixels per foot. "
+    "4. Measure the pixel distance from mark B down to the waterline and divide by pixels "
+    "   per foot. level = B minus that. This works whether or not the next mark down is "
+    "   underwater, and whether or not you can read the '1'. "
+    "5. If the narrow 0.25 ft ticks between B and the waterline are visible, count them as a "
+    "   cross-check. "
+
+    "A visible number is NOT a floor. The water is often below the lowest number you can "
+    "read, and readings under 1.0 ft are normal in late summer. If the waterline is below "
+    "the bottom end of the staff, report the y of the staff's bottom end as the waterline "
+    "and say so in the notes. "
+
+    "Only report a mark if you can read its number. A mark you are unsure of is worse than "
+    "no mark. Use confidence \"high\" only when you read three or more marks and the "
+    "waterline crosses the staff cleanly, \"low\" when glare, shadow, foam or reflection "
+    "make the waterline a guess. "
+
+    "Respond ONLY with raw JSON, no markdown, in exactly this shape: "
+    "{{\"marks\": [{{\"value\": 5, \"y\": 88}}, {{\"value\": 4, \"y\": 206}}, "
+    "{{\"value\": 3, \"y\": 325}}], \"waterline_y\": 384, \"level\": 2.5, "
+    "\"confidence\": \"medium\", \"notes\": \"scale about 118 px/ft from the 5 and 3 marks; "
+    "waterline 59 px below the 3 mark, so 3 minus 0.5\"}}"
 )
 
+READ_USER_PROMPT = (
+    "Read the gauge. Report the y pixel of every whole-foot hashmark you can read and the y "
+    "pixel of the waterline, then compute the level from the spacing between the marks. "
+    "Return JSON only."
+)
 
-def ask_claude(image_bytes):
-    """Ask Claude to read the gauge from one image. Returns parsed dict."""
-    client = anthropic.Anthropic()
+# Crop padding as a fraction of the located box, and target crop height after
+# enlarging. The staff is ~120 px tall in the raw frame; ~900 px gives the
+# model 0.1 ft at roughly 20 px.
+CROP_PAD_X = float(os.environ.get("CROP_PAD_X", "0.6"))
+CROP_PAD_Y = float(os.environ.get("CROP_PAD_Y", "0.2"))
+CROP_TARGET_H = int(os.environ.get("CROP_TARGET_H", "900"))
+CROP_MAX_SCALE = float(os.environ.get("CROP_MAX_SCALE", "5"))
+
+
+def _client():
+    return anthropic.Anthropic()
+
+
+def _ask(system, user_text, image_bytes, max_tokens=700):
     image_b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
-
-    message = client.messages.create(
+    message = _client().messages.create(
         model=ANTHROPIC_MODEL,
-        max_tokens=600,
-        system=SYSTEM_PROMPT,
+        max_tokens=max_tokens,
+        system=system,
         messages=[{
             "role": "user",
             "content": [
-                {
-                    "type": "image",
-                    "source": {"type": "base64", "media_type": "image/jpeg", "data": image_b64},
-                },
-                {"type": "text", "text": USER_PROMPT},
+                {"type": "image",
+                 "source": {"type": "base64", "media_type": "image/jpeg", "data": image_b64}},
+                {"type": "text", "text": user_text},
             ],
         }],
     )
-
     text = message.content[0].text.strip()
-    match = re.search(r'\{[^{}]+\}', text, re.DOTALL)
+    match = re.search(r"\{.*\}", text, re.DOTALL)
     if not match:
         raise ValueError(f"No JSON in response: {text!r}")
     return json.loads(match.group())
+
+
+def locate_staff(image_bytes):
+    """Pass 1: bounding box of the staff in full-frame pixels, or None."""
+    box = _ask(LOCATE_PROMPT, "Where is the staff gauge? JSON only.", image_bytes, max_tokens=200)
+    if not box.get("found", True):
+        return None
+    try:
+        x0, y0, x1, y1 = (float(box[k]) for k in ("x0", "y0", "x1", "y1"))
+    except (KeyError, TypeError, ValueError):
+        return None
+    if x1 <= x0 or y1 <= y0:
+        return None
+    return x0, y0, x1, y1
+
+
+def crop_and_enlarge(image_bytes, box):
+    """
+    Pad the located box, crop, and enlarge with a smooth resampler. Returns
+    (jpeg_bytes, width, height, scale). Falls back to the full frame if the
+    box is degenerate.
+    """
+    from io import BytesIO
+    from PIL import Image
+
+    img = Image.open(BytesIO(image_bytes)).convert("RGB")
+    W, H = img.size
+
+    if box is None:
+        crop = img
+        scale = 1.0
+    else:
+        x0, y0, x1, y1 = box
+        bw, bh = x1 - x0, y1 - y0
+        x0 = max(0, int(x0 - bw * CROP_PAD_X))
+        x1 = min(W, int(x1 + bw * CROP_PAD_X))
+        y0 = max(0, int(y0 - bh * CROP_PAD_Y))
+        y1 = min(H, int(y1 + bh * CROP_PAD_Y))
+        if x1 - x0 < 20 or y1 - y0 < 40:
+            crop, scale = img, 1.0
+        else:
+            crop = img.crop((x0, y0, x1, y1))
+            scale = max(1.0, min(CROP_MAX_SCALE, CROP_TARGET_H / crop.height))
+
+    if scale > 1.0:
+        crop = crop.resize((round(crop.width * scale), round(crop.height * scale)),
+                           Image.LANCZOS)
+
+    out = BytesIO()
+    crop.save(out, format="JPEG", quality=92)
+    return out.getvalue(), crop.width, crop.height, scale
+
+
+def level_from_geometry(marks, waterline_y):
+    """
+    Fit y = a + b*value through the reported whole-foot marks and evaluate at
+    the waterline. Returns (level, px_per_ft, reason) — level is None when
+    the marks do not describe a sane staff.
+
+    Checks: at least two distinct marks; y increases as the number decreases
+    (the staff reads 6 at the top); consecutive spacings agree with the fitted
+    pixels-per-foot within 30%; and the waterline is not above a mark the
+    model claims to have read dry.
+    """
+    pts = {}
+    for m in marks or []:
+        try:
+            v, y = float(m["value"]), float(m["y"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if v.is_integer() and 0 <= v <= 6:
+            pts[int(v)] = y
+    if len(pts) < 2:
+        return None, None, "fewer than two readable marks"
+
+    seq = sorted(pts.items(), key=lambda kv: -kv[0])   # top of staff first
+    for (v1, y1), (v2, y2) in zip(seq, seq[1:]):
+        if y2 <= y1:
+            return None, None, f"marks out of order: {v1} at y={y1:.0f}, {v2} at y={y2:.0f}"
+
+    n = len(seq)
+    xs = [v for v, _ in seq]; ys = [y for _, y in seq]
+    mx = sum(xs) / n; my = sum(ys) / n
+    sxx = sum((x - mx) ** 2 for x in xs)
+    sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    b = sxy / sxx
+    a = my - b * mx
+    px_per_ft = -b
+    if px_per_ft <= 0:
+        return None, None, "non-positive scale"
+
+    for (v1, y1), (v2, y2) in zip(seq, seq[1:]):
+        local = (y2 - y1) / (v1 - v2)
+        if abs(local - px_per_ft) > 0.30 * px_per_ft:
+            return None, None, (f"uneven spacing: {v1}->{v2} is {local:.0f} px/ft "
+                                f"vs fit {px_per_ft:.0f}")
+
+    try:
+        wy = float(waterline_y)
+    except (TypeError, ValueError):
+        return None, px_per_ft, "no waterline"
+
+    lowest_v, lowest_y = seq[-1]
+    if wy < lowest_y - 0.10 * px_per_ft:
+        return None, px_per_ft, (f"waterline y={wy:.0f} is above the {lowest_v} mark "
+                                 f"at y={lowest_y:.0f}, which was reported dry")
+
+    level = (wy - a) / b
+    return level, px_per_ft, f"{n} marks, {px_per_ft:.0f} px/ft"
+
+
+def read_one(image_bytes):
+    """
+    Read one photo. Returns a dict with the chosen level, how it was chosen,
+    and everything the model reported, so a bad day is diagnosable.
+    """
+    box = None
+    try:
+        box = locate_staff(image_bytes)
+    except Exception as e:
+        log.warning("    locate pass failed (%s) — reading the full frame", e)
+
+    crop_bytes, w, h, scale = crop_and_enlarge(image_bytes, box)
+
+    system = READ_PROMPT_TEMPLATE.format(w=w, h=h)
+    result = _ask(system, READ_USER_PROMPT, crop_bytes)
+
+    model_level = result.get("level")
+    try:
+        model_level = float(model_level) if model_level is not None else None
+    except (TypeError, ValueError):
+        model_level = None
+
+    geom_level, px_per_ft, reason = level_from_geometry(
+        result.get("marks"), result.get("waterline_y"))
+
+    conf = str(result.get("confidence", "")).strip().lower() or "unknown"
+
+    if geom_level is not None and 0.0 <= geom_level <= 6.5:
+        level, method = geom_level, "geometry"
+        if model_level is not None and abs(model_level - geom_level) > 0.4:
+            # The model's arithmetic disagrees with its own coordinates. Trust
+            # the coordinates, but say so and knock the confidence down.
+            log.info("    model said %.2f, geometry says %.2f (%s) — using geometry",
+                     model_level, geom_level, reason)
+            conf = "low" if conf == "high" else conf
+    elif model_level is not None:
+        level, method = model_level, "model"
+        conf = "low"
+        log.info("    geometry unusable (%s) — falling back to model estimate %.2f",
+                 reason, model_level)
+    else:
+        raise ValueError(f"no usable level in response: {result!r}")
+
+    return {
+        "level": round(level, 2),
+        "method": method,
+        "confidence": conf,
+        "notes": result.get("notes", ""),
+        "model_level": model_level,
+        "geometry_level": round(geom_level, 2) if geom_level is not None else None,
+        "px_per_ft": round(px_per_ft, 1) if px_per_ft else None,
+        "geometry_note": reason,
+        "marks": result.get("marks"),
+        "waterline_y": result.get("waterline_y"),
+        "crop_box": [round(v) for v in box] if box else None,
+        "crop_scale": round(scale, 2),
+    }
 
 
 # -- Consensus logic ----------------------------------------------------------
@@ -293,18 +485,17 @@ def read_consensus(image_list):
     for key, ts in image_list:
         filename = key.split("/")[-1]
         try:
-            result = ask_claude(fetch_image_bytes(key))
-            level = float(result["level"])
-            conf = str(result.get("confidence", "")).strip().lower()
-            samples.append({
+            r = read_one(fetch_image_bytes(key))
+            sample = {
                 "file": filename,
                 "camera": camera_id(key),
                 "taken": ts.isoformat() if ts else None,
-                "level": level,
-                "confidence": conf or "unknown",
-                "notes": result.get("notes", ""),
-            })
-            log.info("  %s -> %.2f ft (%s)", filename, level, conf or "?")
+            }
+            sample.update(r)
+            samples.append(sample)
+            log.info("  %s -> %.2f ft (%s, %s%s)", filename, r["level"], r["confidence"],
+                     r["method"],
+                     f", {r['px_per_ft']} px/ft" if r.get("px_per_ft") else "")
         except Exception as e:
             log.warning("  %s -> skipped: %s", filename, e)
 
