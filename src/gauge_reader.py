@@ -181,15 +181,16 @@ def image_url_for_key(key):
 #   can be checked. The model's own estimate is kept alongside as a fallback
 #   and a cross-check.
 
-LOCATE_PROMPT = (
-    "This is a trail-camera photo of a river. Somewhere in it is a white vertical staff "
-    "gauge with black hashmarks and numbers, mounted against the rock and running down into "
-    "the water. Return the bounding box of the staff in pixel coordinates of this image, "
-    "x increasing to the right and y increasing downward, from the top of the staff down to "
-    "where it meets the water. Be generous rather than tight. "
+LOCATE_PROMPT_TEMPLATE = (
+    "This is a trail-camera photo of a river, {w} pixels wide by {h} pixels tall. Somewhere "
+    "in it is a white vertical staff gauge with black hashmarks and numbers, mounted against "
+    "the rock face and running down into the water. It is a tall thin white strip, much "
+    "taller than it is wide. Return its bounding box in pixel coordinates of THIS image "
+    "(0..{w} across, 0..{h} down, y increasing downward), from the top of the staff to where "
+    "it meets the water. Be generous rather than tight. "
     "Respond ONLY with raw JSON, no markdown: "
-    "{\"x0\": 410, \"y0\": 230, \"x1\": 470, \"y1\": 390, \"found\": true}. "
-    "If there is no staff visible, respond {\"found\": false}."
+    "{{\"x0\": 410, \"y0\": 230, \"x1\": 470, \"y1\": 390, \"found\": true}}. "
+    "If there is no staff visible, respond {{\"found\": false}}."
 )
 
 READ_PROMPT_TEMPLATE = (
@@ -276,16 +277,40 @@ def _ask(system, user_text, image_bytes, max_tokens=700):
     return json.loads(match.group())
 
 
+def image_size(image_bytes):
+    from io import BytesIO
+    from PIL import Image
+    return Image.open(BytesIO(image_bytes)).size
+
+
 def locate_staff(image_bytes):
-    """Pass 1: bounding box of the staff in full-frame pixels, or None."""
-    box = _ask(LOCATE_PROMPT, "Where is the staff gauge? JSON only.", image_bytes, max_tokens=200)
+    """
+    Pass 1: bounding box of the staff in full-frame pixels, or None.
+
+    The box is rejected if it does not look like a staff: it must lie inside
+    the frame, be taller than it is wide, and span between 4% and 70% of the
+    frame height. On 2026-09-02 two frames came back with boxes on bare rock,
+    one of them an HD frame the model had evidently boxed at 880x660 scale.
+    """
+    W, H = image_size(image_bytes)
+    prompt = LOCATE_PROMPT_TEMPLATE.format(w=W, h=H)
+    box = _ask(prompt, "Where is the staff gauge? JSON only.", image_bytes, max_tokens=200)
     if not box.get("found", True):
         return None
     try:
         x0, y0, x1, y1 = (float(box[k]) for k in ("x0", "y0", "x1", "y1"))
     except (KeyError, TypeError, ValueError):
         return None
-    if x1 <= x0 or y1 <= y0:
+    bw, bh = x1 - x0, y1 - y0
+    if bw <= 0 or bh <= 0:
+        return None
+    if x1 > W * 1.05 or y1 > H * 1.05 or x0 < -0.05 * W or y0 < -0.05 * H:
+        log.info("    locate box %s falls outside the %dx%d frame — ignoring it",
+                 [round(v) for v in (x0, y0, x1, y1)], W, H)
+        return None
+    if bh < bw or not (0.04 * H <= bh <= 0.70 * H):
+        log.info("    locate box %s is not staff-shaped for a %dx%d frame — ignoring it",
+                 [round(v) for v in (x0, y0, x1, y1)], W, H)
         return None
     return x0, y0, x1, y1
 
@@ -397,9 +422,17 @@ def read_one(image_bytes):
         log.warning("    locate pass failed (%s) — reading the full frame", e)
 
     crop_bytes, w, h, scale = crop_and_enlarge(image_bytes, box)
-
     system = READ_PROMPT_TEMPLATE.format(w=w, h=h)
     result = _ask(system, READ_USER_PROMPT, crop_bytes)
+
+    # A crop that misses the staff comes back with no marks. Try once more on
+    # the whole frame before giving up on the photo.
+    if box is not None and not result.get("marks"):
+        log.info("    crop showed no marks — retrying on the full frame")
+        box = None
+        crop_bytes, w, h, scale = crop_and_enlarge(image_bytes, None)
+        system = READ_PROMPT_TEMPLATE.format(w=w, h=h)
+        result = _ask(system, READ_USER_PROMPT, crop_bytes)
 
     model_level = result.get("level")
     try:
@@ -412,8 +445,26 @@ def read_one(image_bytes):
 
     conf = str(result.get("confidence", "")).strip().lower() or "unknown"
 
+    n_marks = len([m for m in (result.get("marks") or []) if isinstance(m, dict)])
+    lowest_mark = None
+    try:
+        lowest_mark = min(float(m["value"]) for m in result.get("marks") or [] if isinstance(m, dict))
+    except (ValueError, KeyError, TypeError):
+        pass
+
     if geom_level is not None and 0.0 <= geom_level <= 6.5:
         level, method = geom_level, "geometry"
+        # Two marks give a scale but no redundancy: a single mislabeled mark
+        # shifts the answer by a whole foot with nothing to catch it. That is
+        # what a 0.02 ft reading from two marks looked like on 2026-09-02.
+        if n_marks < 3:
+            conf = "low"
+        # If the water is far below the lowest mark the model could read, it
+        # most likely skipped a readable mark or mislabeled one.
+        if lowest_mark is not None and lowest_mark - geom_level > 1.6:
+            log.info("    level %.2f is %.1f ft below the lowest read mark (%d) — capping confidence",
+                     geom_level, lowest_mark - geom_level, lowest_mark)
+            conf = "low"
         if model_level is not None and abs(model_level - geom_level) > 0.4:
             # The model's arithmetic disagrees with its own coordinates. Trust
             # the coordinates, but say so and knock the confidence down.
@@ -462,23 +513,51 @@ def confidence_from_spread(spread, n):
 
 MIN_KEPT = int(os.environ.get("MIN_KEPT", "2"))
 
+# The staff is watched by two cameras. 865509053179515 is the close one and
+# agrees with ground truth; 016578000423746 has read about half a foot high on
+# three consecutive days from a different angle. The secondary is still read
+# and recorded every run, but only counts toward the published number when the
+# primary produced fewer than MIN_KEPT usable frames.
+PRIMARY_CAMERA = os.environ.get("PRIMARY_CAMERA", "865509053179515").strip()
+
+CONF_WEIGHT = {"high": 3, "medium": 2, "low": 1}
+
+
+def weighted_median(pairs):
+    """
+    pairs: [(value, weight)]. Median of the values under integer weights.
+    When the weight splits exactly in half (two lows against one medium, say)
+    the lower and upper medians differ and their mean is returned.
+    """
+    pairs = sorted(pairs)
+    total = sum(w for _, w in pairs)
+    lower = upper = None
+    acc = 0
+    for v, w in pairs:
+        acc += w
+        if lower is None and acc * 2 >= total:
+            lower = v
+        if acc * 2 > total:
+            upper = v
+            break
+    if upper is None:
+        upper = pairs[-1][0]
+    return (lower + upper) / 2
+
 
 def read_consensus(image_list):
     """
-    Read each image independently and reduce to a median plus an error bar.
+    Read each image independently and reduce to one number plus an error bar.
 
-    The spread across images taken minutes apart is measurement noise, not real
-    river movement, so it gets published rather than averaged away.
+    The published level is a confidence-weighted median (high=3, medium=2,
+    low=1) over the primary camera's frames. Nothing is discarded, but a clean
+    midday frame outvotes a pre-dawn guess. The spread is taken over the
+    medium-or-better frames when there are at least two, otherwise over all,
+    so a single bad frame does not paint the whole day as uncertain.
 
-    Frames the model itself flags "low" are dropped when at least MIN_KEPT
-    others survive. In practice those are the pre-dawn and low-sun frames, where
-    the waterline is guesswork — on 2026-09-02 the three low-confidence frames
-    read 1.2-1.3 while the daylight ones read 1.4-1.8. Every sample is still
-    recorded, so nothing is silently discarded.
-
-    Camera id is recorded per sample. Two cameras watch this staff from
-    different angles and appear to disagree by a few tenths; keeping the id
-    makes that bias measurable in the history instead of invisible.
+    Every sample is recorded with camera id, method, both levels, scale, the
+    marks and waterline the model reported, and the crop box, so any bad day
+    can be traced to the step that went wrong.
     """
     samples = []
 
@@ -502,42 +581,54 @@ def read_consensus(image_list):
     if not samples:
         raise RuntimeError("No valid readings obtained from any image")
 
-    kept = [s for s in samples if s["confidence"] != "low"]
-    if len(kept) < MIN_KEPT:
-        kept = samples
-        if any(s["confidence"] == "low" for s in samples):
-            log.warning("Too few confident frames to filter — keeping all %d.", len(samples))
-    elif len(kept) < len(samples):
-        log.info("Dropped %d low-confidence frame(s): %s",
-                 len(samples) - len(kept),
-                 [s["file"] for s in samples if s["confidence"] == "low"])
-
-    kept.sort(key=lambda s: s["level"])
-    levels = [s["level"] for s in kept]
-    median = round_tenth(statistics.median(levels))
-    spread = round(levels[-1] - levels[0], 2)
-
-    closest = min(kept, key=lambda s: abs(s["level"] - median))
-
     by_camera = {}
-    for s in kept:
-        by_camera.setdefault(s["camera"], []).append(s["level"])
+    for smp in samples:
+        by_camera.setdefault(smp["camera"], []).append(smp)
     if len(by_camera) > 1:
-        summary = {c: round(statistics.median(v), 2) for c, v in by_camera.items()}
-        log.info("Per-camera medians: %s", summary)
+        log.info("Per-camera medians: %s",
+                 {c: round(statistics.median(x["level"] for x in v), 2)
+                  for c, v in by_camera.items()})
 
-    log.info("Kept %d/%d: %s -> median %.1f ft (spread %.2f)",
-             len(kept), len(samples), levels, median, spread)
+    primary = [smp for smp in samples if smp["camera"] == PRIMARY_CAMERA]
+    used_primary = len(primary) >= MIN_KEPT
+    if used_primary:
+        counted = primary
+    elif primary:
+        counted = samples
+        log.warning("Only %d usable frame(s) from primary camera %s — counting all cameras.",
+                    len(primary), PRIMARY_CAMERA)
+    else:
+        counted = samples
+        log.warning("No usable frames from primary camera %s — counting all cameras.",
+                    PRIMARY_CAMERA)
+
+    counted = sorted(counted, key=lambda x: x["level"])
+    weighted = [(x["level"], CONF_WEIGHT.get(x["confidence"], 1)) for x in counted]
+    median = round_tenth(weighted_median(weighted))
+
+    good = [x for x in counted if x["confidence"] in ("high", "medium")]
+    basis = good if len(good) >= 2 else counted
+    levels = [x["level"] for x in basis]
+    spread = round(max(levels) - min(levels), 2)
+
+    closest = min(counted, key=lambda x: (abs(x["level"] - median),
+                                          -CONF_WEIGHT.get(x["confidence"], 1)))
+
+    log.info("Counted %d/%d (%s): %s -> weighted median %.1f ft (spread %.2f over %d)",
+             len(counted), len(samples),
+             "primary" if used_primary else "all cameras",
+             [(x["level"], x["confidence"][0]) for x in counted], median, spread, len(basis))
 
     return {
         "level": median,
-        "readings": levels,
+        "readings": [x["level"] for x in counted],
         "samples": samples,
         "cameras": sorted(by_camera),
-        "low": round_tenth(levels[0]),
-        "high": round_tenth(levels[-1]),
+        "counted_camera": PRIMARY_CAMERA if used_primary else "all",
+        "low": round_tenth(min(levels)),
+        "high": round_tenth(max(levels)),
         "spread": spread,
-        "confidence": confidence_from_spread(spread, len(levels)),
+        "confidence": confidence_from_spread(spread, len(basis)),
         "notes": closest["notes"],
     }
 
@@ -685,6 +776,7 @@ def main():
         "readings": result["readings"],
         "samples": result["samples"],
         "cameras": result["cameras"],
+        "counted_camera": result["counted_camera"],
         "images_analyzed": len(result["readings"]),
         "images_read": len(result["samples"]),
         "notes": result["notes"],
