@@ -471,8 +471,7 @@ body {
 @media (max-width: 720px), (max-height: 520px) {
   .rp-head { padding: calc(10px + env(safe-area-inset-top)) 16px 12px; }
   .rp-lede, .rp-keys, .rp-legend, .rp-gauge-col, .rp-stat-link { display: none; }
-  .rp-names-btn { margin-top: 10px; min-height: 32px; padding: 8px 10px; }
-  .rp-names button { min-height: 32px; }
+  .rp-names-btn, .rp-names { display: none; }   /* tap a river instead */
   /* Anchor the camera stack under the header, measured by the script. */
   .rp-cam { top: calc(var(--head-h, 190px) + 8px); bottom: auto; right: 10px; }
   .rp-cam button { width: 36px; height: 36px; }
