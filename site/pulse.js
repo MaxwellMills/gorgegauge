@@ -858,8 +858,16 @@
     el.hidden = mm == null;
     if (mm == null) return;
     const snowing = cm != null && cm >= 0.5;
+    // The past week as well, so a dry day does not read as a dry spell.
+    let week = 0;
+    for (let i = Math.max(0, day - 6); i <= day; i++) { const w = rain.precip[i]; if (w && w[k] != null) week += w[k]; }
     document.getElementById("rainLabel").textContent = snowing ? "SNOW AT HOOD RIVER ·" : "RAIN AT HOOD RIVER ·";
     document.getElementById("rainValue").textContent = snowing ? fmtSnow(cm) : mm >= 0.3 ? fmtRain(mm) : "dry";
+    document.getElementById("rainWeek").textContent = `· ${week >= 0.3 ? fmtRain(week) : "none"} past 7 days`;
+
+    // The button says when it is on but nothing is falling anywhere today.
+    const anyToday = (rain.precip[day] || []).some((v) => v != null && v >= 1) || (rain.snow[day] || []).some((v) => v != null && v >= 0.5);
+    document.getElementById("rainBtn").textContent = rainEnabled() && !anyToday ? "rain · dry" : "rain";
     if (rainEnabled() && !rainLoop) { rainLoop = true; rainLast = performance.now(); requestAnimationFrame(rainFrame); }
   }
 
