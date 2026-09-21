@@ -322,7 +322,9 @@ body {
 .rp-foot > * { pointer-events: auto; }
 
 .rp-row { display: flex; align-items: flex-end; gap: 22px; }
-.rp-row-top { flex-wrap: wrap; row-gap: 10px; }
+/* Readouts and legend hang from a common top line; the date sits on the baseline. */
+.rp-row-top { flex-wrap: wrap; row-gap: 10px; align-items: flex-start; }
+.rp-row-top .rp-date { align-self: flex-end; }
 
 .rp-date {
   flex: 1 1 auto;
@@ -376,7 +378,7 @@ body {
   margin-top: 2px;
 }
 
-.rp-toggles { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; align-self: center; }
+.rp-toggles { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; align-self: flex-start; }
 .rp-units-k {
   font-family: var(--mono);
   font-size: 9.5px;
