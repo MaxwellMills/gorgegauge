@@ -24,6 +24,7 @@
 <body>
   <div class="rp-page" id="page" data-state="loading">
     <canvas id="map" class="rp-map" aria-label="Map of Columbia Gorge rivers as walls of water"></canvas>
+    <canvas id="rain" class="rp-rain" aria-hidden="true"></canvas>
 
     <header class="rp-head">
       <nav class="rp-brand" aria-label="Site">
@@ -100,6 +101,9 @@
             <button type="button" data-unit="cfs" class="on">ft³/s</button>
             <button type="button" data-unit="cms">m³/s</button>
           </div>
+          <div class="rp-units" role="group" aria-label="Weather">
+            <button type="button" id="rainBtn" aria-pressed="false" title="Show the day's rain and snow falling">rain</button>
+          </div>
         </div>
       </div>
 
@@ -118,6 +122,10 @@
         <div class="rp-stat">
           <span class="rp-stat-v" id="ratioValue">—</span>
           <span class="rp-stat-k" id="ratioNote">peak day to floor day</span>
+        </div>
+        <div class="rp-stat rp-stat-rain" id="rainStat" hidden>
+          <span class="rp-stat-k" id="rainLabel">RAIN AT HOOD RIVER ·</span>
+          <span class="rp-stat-v" id="rainValue">—</span>
         </div>
         <div class="rp-stat rp-stat-husum" id="husumStat" hidden>
           <span class="rp-stat-k">HUSUM STAFF ·</span>

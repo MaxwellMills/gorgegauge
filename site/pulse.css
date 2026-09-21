@@ -76,6 +76,15 @@ body {
 }
 .rp-page[data-dragging="true"] .rp-map { cursor: grabbing; }
 
+/* Rain and snow fall on their own layer above the map. */
+.rp-rain {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
 /* Header ------------------------------------------------------------------ */
 
 .rp-head {
@@ -433,7 +442,7 @@ body {
 .rp-stat { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .rp-stat-v { font-family: var(--serif); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; flex: 0 0 auto; }
 .rp-stat-k { text-transform: none; letter-spacing: 0.04em; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.rp-stat-husum .rp-stat-k:first-child { text-transform: uppercase; letter-spacing: 0.12em; }
+.rp-stat-husum .rp-stat-k:first-child, .rp-stat-rain .rp-stat-k:first-child { text-transform: uppercase; letter-spacing: 0.12em; }
 .rp-stat-link {
   border: 0;
   background: transparent;

@@ -102,6 +102,23 @@ GAUGES = [
     ("12510500", "Yakima River",             "Yakima",        "beyond",  70,   5, False),
 ]
 
+# Daily rain and snow, from Open-Meteo's reanalysis archive, sampled at a
+# handful of places across the frame so the map can show the wet west end
+# and the dry east end. The archive lags a few days; the forecast endpoint's
+# past_days fills the tail.
+RAIN_POINTS = [
+    ("Portland",        45.52, -122.68),
+    ("Cougar",          46.05, -122.30),
+    ("Cascade Locks",   45.67, -121.89),
+    ("Government Camp", 45.30, -121.75),
+    ("Hood River",      45.71, -121.52),
+    ("Trout Lake",      46.00, -121.53),
+    ("The Dalles",      45.59, -121.18),
+    ("Boardman",        45.84, -119.70),
+]
+METEO_ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"
+METEO_RECENT = "https://api.open-meteo.com/v1/forecast"
+
 NLDI = "https://api.water.usgs.gov/nldi/linked-data/nwissite/USGS-{site}/navigation/{nav}/flowlines?distance={km}"
 NWIS_DV = "https://waterservices.usgs.gov/nwis/dv/"
 NWIS_IV = "https://waterservices.usgs.gov/nwis/iv/"
@@ -343,6 +360,47 @@ def instantaneous_as_daily(site, code, start, end):
     return {d: sums[d] / counts[d] for d in sums}
 
 
+def fetch_rain(start, end):
+    """
+    {"YYYY-MM-DD": ([mm per point], [cm of snow per point])} for the range.
+    The archive covers up to about a week ago; the last days come from the
+    forecast endpoint's history, which is the same model a few days fresher.
+    """
+    lats = ",".join(str(p[1]) for p in RAIN_POINTS)
+    lons = ",".join(str(p[2]) for p in RAIN_POINTS)
+    out = {}
+
+    def absorb(payload):
+        results = payload if isinstance(payload, list) else [payload]
+        for k, r in enumerate(results):
+            d = r.get("daily", {})
+            for i, day in enumerate(d.get("time", [])):
+                mm = d["precipitation_sum"][i]
+                cm = d.get("snowfall_sum", [None] * len(d["time"]))[i]
+                rec = out.setdefault(day, ([None] * len(RAIN_POINTS), [None] * len(RAIN_POINTS)))
+                rec[0][k] = None if mm is None else round(float(mm), 1)
+                rec[1][k] = None if cm is None else round(float(cm), 1)
+
+    archive_end = min(end, date.today() - timedelta(days=7))
+    if archive_end >= start:
+        try:
+            absorb(get(METEO_ARCHIVE, {
+                "latitude": lats, "longitude": lons,
+                "start_date": start.isoformat(), "end_date": archive_end.isoformat(),
+                "daily": "precipitation_sum,snowfall_sum", "timezone": "America/Los_Angeles",
+            }, timeout=180).json())
+        except Exception as e:
+            log.warning("  rain archive failed: %s", e)
+    try:
+        absorb(get(METEO_RECENT, {
+            "latitude": lats, "longitude": lons, "past_days": 14, "forecast_days": 1,
+            "daily": "precipitation_sum,snowfall_sum", "timezone": "America/Los_Angeles",
+        }).json())
+    except Exception as e:
+        log.warning("  recent rain failed: %s", e)
+    return out
+
+
 # -- Builders -----------------------------------------------------------------
 
 def build_rivers():
@@ -461,12 +519,35 @@ def build_flows(existing=None):
         havet = sum(v is not None for v in rec["temp"])
         log.info("  %s: %d/%d days of flow, %d of temperature", site, have, n, havet)
 
+    # Rain and snow: the whole record the first time, then just the window.
+    rain_from = fetch_from if prior and prior.get("rain") else start
+    log.info("Rain %s → %s…", rain_from, end)
+    fresh = fetch_rain(rain_from, end)
+    npts = len(RAIN_POINTS)
+    precip = [[None] * npts for _ in range(n)]
+    snow = [[None] * npts for _ in range(n)]
+    if prior and prior.get("rain"):
+        old = prior["rain"]
+        for i in range(min(len(old.get("precip", [])), n)):
+            precip[i] = list(old["precip"][i])
+            snow[i] = list(old["snow"][i])
+    for i, d in enumerate(days):
+        if d in fresh:
+            precip[i], snow[i] = fresh[d]
+    have = sum(1 for row in precip if row[0] is not None)
+    log.info("  rain: %d/%d days", have, n)
+
     return {
         "generated_at": datetime.utcnow().isoformat() + "Z",
         "start": start.isoformat(),
         "end": end.isoformat(),
         "days": n,
         "sites": out,
+        "rain": {
+            "points": [{"name": nm, "lat": la, "lon": lo} for nm, la, lo in RAIN_POINTS],
+            "precip": precip,     # mm per day per point
+            "snow": snow,         # cm of snowfall per day per point
+        },
     }
 
 

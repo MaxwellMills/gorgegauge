@@ -72,6 +72,8 @@
   const page = document.getElementById("page");
   const canvas = document.getElementById("map");
   let ctx = canvas.getContext("2d");
+  const rainCanvas = document.getElementById("rain");
+  const rctx = rainCanvas.getContext("2d");
   const spark = document.getElementById("spark");
   const sctx = spark.getContext("2d");
   const tip = document.getElementById("tip");
@@ -92,6 +94,10 @@
   let hovered = null, focused = null, focusUntil = 0;
   let hits = [];         // polygons drawn this frame, for hover
   let staticLayer = null, staticKey = "";   // table + relief + network + landmarks, per camera
+  let rain = null;         // flows.rain, when present
+  let drops = [];          // the pool of candidate raindrops over the frame
+  let rainLoop = false, rainLast = 0;
+  let rainOn = stored("pulse:rain", "off");   // off until someone turns it on; remembered
   let theme = readTheme();
   let W = 0, H = 0, DPR = 1;
 
@@ -227,6 +233,7 @@
     document.querySelector(".rp-kicker").textContent = `EVERY GAUGED RIVER, EVERY DAY SINCE ${since.toUpperCase()}`;
 
     if (terrain && terrain.init) terrain.init({ proj: { ...proj }, bboxKm: { ...bboxKm }, toKm });
+    prepareRain(fl.rain);
     document.getElementById("legendBar").style.background =
       `linear-gradient(90deg, ${RAMP.map((c, i) => `rgb(${c.join(",")}) ${(i / (RAMP.length - 1) * 100).toFixed(1)}%`).join(", ")})`;
     spark.setAttribute("aria-valuemax", String(dayCount - 1));
@@ -419,6 +426,8 @@
     W = canvas.clientWidth; H = canvas.clientHeight;
     canvas.width = W * DPR; canvas.height = H * DPR;
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    rainCanvas.width = W * DPR; rainCanvas.height = H * DPR;
+    rctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     spark.width = spark.clientWidth * DPR; spark.height = spark.clientHeight * DPR;
     sctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   }
@@ -777,6 +786,139 @@
     label.style.left = `${pct}%`;
   }
 
+  // ── Rain ────────────────────────────────────────────────────────────────
+  // Daily rain and snow at a few places across the frame. Each candidate
+  // drop has a fixed spot on the ground and inverse-distance weights to the
+  // sample points, so the day's amounts turn into a density of streaks that
+  // is heavy over Portland and the Cascades and sparse past The Dalles.
+  const RAIN_DROPS = 1400, RAIN_FULL_MM = 30, RAIN_AIR_KM = 14;
+
+  function prepareRain(data) {
+    rain = data && data.points && data.precip ? data : null;
+    drops = [];
+    if (!rain) return;
+    const pts = rain.points.map((p) => toKm(p.lon, p.lat));
+    let seed = 7;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+    const count = isPhone() ? RAIN_DROPS / 2 : RAIN_DROPS;
+    for (let k = 0; k < count; k++) {
+      const x = bboxKm.x0 + rnd() * (bboxKm.x1 - bboxKm.x0);
+      const y = bboxKm.y0 + rnd() * (bboxKm.y1 - bboxKm.y0);
+      const w = pts.map(([px, py]) => 1 / (Math.pow(Math.hypot(px - x, py - y), 2) + 4));
+      const sum = w.reduce((a, b) => a + b, 0);
+      drops.push({ x, y, w: w.map((v) => v / sum), gate: rnd(), phase: rnd(), sway: rnd() * Math.PI * 2 });
+    }
+  }
+
+  // Rain (mm) and snow (cm) at a drop's spot for the day.
+  function rainAt(d, i) {
+    const row = rain.precip[i], srow = rain.snow[i];
+    let mm = 0, cm = 0;
+    for (let k = 0; k < d.w.length; k++) {
+      if (row && row[k] != null) mm += d.w[k] * row[k];
+      if (srow && srow[k] != null) cm += d.w[k] * srow[k];
+    }
+    return [mm, cm];
+  }
+
+  // The day's rain at the nearest sample point to a river's gauge.
+  function rainNearest(r) {
+    if (!rain) return null;
+    let best = 0, bd = Infinity;
+    rain.points.forEach((p, k) => {
+      const [px, py] = toKm(p.lon, p.lat);
+      const d = Math.hypot(px - r.gauge[0], py - r.gauge[1]);
+      if (d < bd) { bd = d; best = k; }
+    });
+    const row = rain.precip[day], srow = rain.snow[day];
+    return { name: rain.points[best].name, mm: row ? row[best] : null, cm: srow ? srow[best] : null };
+  }
+
+  function fmtRain(mm) { return unit === "cfs" ? `${(mm / 25.4).toFixed(2)} in` : `${mm.toFixed(1)} mm`; }
+  function fmtSnow(cm) { return unit === "cfs" ? `${(cm / 2.54).toFixed(1)} in` : `${cm.toFixed(0)} cm`; }
+
+  function rainNote(r) {
+    const n = rainNearest(r);
+    if (!n || n.mm == null) return "";
+    if (n.cm != null && n.cm >= 0.5) return ` · ${fmtSnow(n.cm)} snow`;
+    return n.mm >= 0.3 ? ` · ${fmtRain(n.mm)} rain` : " · dry";
+  }
+
+  function rainEnabled() { return rainOn === "on"; }
+
+  function updateRainStat() {
+    const el = document.getElementById("rainStat");
+    if (!rain) { el.hidden = true; document.getElementById("rainBtn").parentElement.hidden = true; return; }
+    document.getElementById("rainBtn").classList.toggle("on", rainEnabled());
+    document.getElementById("rainBtn").setAttribute("aria-pressed", String(rainEnabled()));
+    if (!rainEnabled()) { rainLoop = false; rctx.clearRect(0, 0, W, H); }
+    const k = rain.points.findIndex((p) => p.name === "Hood River");
+    const row = rain.precip[day], srow = rain.snow[day];
+    const mm = row ? row[k] : null, cm = srow ? srow[k] : null;
+    el.hidden = mm == null;
+    if (mm == null) return;
+    const snowing = cm != null && cm >= 0.5;
+    document.getElementById("rainLabel").textContent = snowing ? "SNOW AT HOOD RIVER ·" : "RAIN AT HOOD RIVER ·";
+    document.getElementById("rainValue").textContent = snowing ? fmtSnow(cm) : mm >= 0.3 ? fmtRain(mm) : "dry";
+    if (rainEnabled() && !rainLoop) { rainLoop = true; rainLast = performance.now(); requestAnimationFrame(rainFrame); }
+  }
+
+  document.getElementById("rainBtn").addEventListener("click", () => {
+    rainOn = rainEnabled() ? "off" : "on";
+    store("pulse:rain", rainOn);
+    update();
+  });
+
+  // Streaks fall from RAIN_AIR_KM above the ground, slanting east with the
+  // weather; flakes drift down slowly and sway. Runs on its own frame loop
+  // and stops itself when the day is dry everywhere.
+  function rainFrame(now) {
+    if (!rainLoop) return;
+    const dt = Math.min((now - rainLast) / 1000, 0.1);
+    rainLast = now;
+    rctx.clearRect(0, 0, W, H);
+    const dark = theme.bg && luminanceOf(theme.bg) < 0.45;
+    let any = false;
+    const rainStyle = dark ? "rgba(190,214,236," : "rgba(40,62,92,";
+    const snowStyle = dark ? "rgba(236,242,248," : "rgba(255,255,255,";
+    const cosP = Math.cos(cam.pitch);
+    rctx.lineWidth = 1;
+    for (const d of drops) {
+      const [mm, cm] = rainAt(d, day);
+      const snowing = cm >= 0.5;
+      const amount = snowing ? cm * 6 : mm;
+      const density = Math.pow(Math.min(amount / RAIN_FULL_MM, 1), 0.7);
+      if (d.gate >= density) continue;
+      any = true;
+      d.phase += dt * (snowing ? 0.22 : 0.9);
+      if (d.phase >= 1) d.phase -= 1;
+      const p = d.phase;
+      const z0 = groundZ(d.x, d.y);
+      if (snowing) {
+        const sway = Math.sin(now / 900 + d.sway) * 0.35;
+        const [sx, sy] = project(d.x + sway, d.y, z0 + (1 - p) * RAIN_AIR_KM);
+        rctx.fillStyle = snowStyle + (0.75 * Math.min(1, (1 - p) * 4 + 0.2)) + ")";
+        rctx.beginPath(); rctx.arc(sx, sy, 1.3, 0, Math.PI * 2); rctx.fill();
+      } else {
+        const wind = p * 1.6;                                   // km of eastward slant over the fall
+        const [sx, sy] = project(d.x + wind, d.y, z0 + (1 - p) * RAIN_AIR_KM);
+        const len = 6 + 10 * density;
+        rctx.strokeStyle = rainStyle + (0.32 * Math.min(1, (1 - p) * 3 + 0.15)) + ")";
+        rctx.beginPath(); rctx.moveTo(sx, sy); rctx.lineTo(sx - len * 0.12, sy - len * cosP - len * 0.4); rctx.stroke();
+      }
+    }
+    if (any) requestAnimationFrame(rainFrame); else { rainLoop = false; }
+  }
+
+  let lumProbe = null;
+  function luminanceOf(color) {
+    if (!lumProbe) lumProbe = document.createElement("canvas").getContext("2d");
+    lumProbe.fillStyle = color;
+    const v = lumProbe.fillStyle;
+    const c = v[0] === "#" ? [parseInt(v.slice(1, 3), 16), parseInt(v.slice(3, 5), 16), parseInt(v.slice(5, 7), 16)] : (v.match(/[\d.]+/g) || [128, 128, 128]).map(Number);
+    return (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255;
+  }
+
   // ── Formatting ──────────────────────────────────────────────────────────
   function unitLabel() { return unit === "cfs" ? "ft³/s" : "m³/s"; }
   function tempNote(r, i) {
@@ -867,6 +1009,7 @@
         : "no reading that day";
     }
 
+    updateRainStat();
     document.getElementById("playBtn").textContent = playing ? "❚❚" : "▶";
     document.getElementById("playBtn").setAttribute("aria-label", playing ? "Pause" : "Play");
     page.dataset.playing = playing;
@@ -984,7 +1127,7 @@
       `<b>${r.name}</b>` +
       `<span class="n">${fmtFlow(v, false)}</span> <span class="m">${v == null ? "" : unitLabel()}</span><br>` +
       `<span class="m">${vsMean}${t != null ? ` · ${r.tempEst[day] ? "~" : ""}${fmtTemp(t)}${tempNote(r, day)}` : " · no temperature gauge"}</span><br>` +
-      `<span class="m">mean ${fmtFlow(r.mean)}</span>`;
+      `<span class="m">mean ${fmtFlow(r.mean)}${rainNote(r)}</span>`;
     tip.hidden = false;
     const tw = tip.offsetWidth, th = tip.offsetHeight;
     tip.style.left = `${Math.min(x + 14, W - tw - 8)}px`;
