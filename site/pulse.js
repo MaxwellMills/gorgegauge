@@ -26,8 +26,8 @@
   const MIN_WIDTH_PX = 2.2;
   const CFS_TO_CMS = 0.0283168;
   const DAYS_PER_SECOND = 8;       // a year in about 45 seconds at 1×
-  const SPEEDS = [0.25, 0.5, 1, 2, 4];
-  const SPEED_LABELS = ["¼×", "½×", "1×", "2×", "4×"];
+  const SPEEDS = [0.5, 1, 2, 4];             // ½× is the default: a year in about 90 seconds
+  const SPEED_LABELS = ["½×", "1×", "2×", "4×"];
 
   const PEAKS = [
     { name: "Mt Adams", lon: -121.4909, lat: 46.2024 },
@@ -88,7 +88,7 @@
   let peakDay = 0, floorDay = 0;
   let unit = stored("pulse:units", "cfs");
   let heightMode = stored("pulse:height", "relative");   // "relative" (vs normal) | "flow"
-  let playing = false, loop = true, speedIx = 2, lastTick = 0, carry = 0;
+  let playing = false, loop = true, speedIx = 0, lastTick = 0, carry = 0;
   let loopFrom = 0, autoplay = false;   // the loop restarts a year back, not at the first day
   const terrain = window.PulseTerrain || null;           // optional relief module (pulse-terrain.js)
   let hovered = null, focused = null, focusUntil = 0;
