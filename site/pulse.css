@@ -100,7 +100,7 @@ body {
 }
 
 /* Idle: the map carries the page; the controls come back on any movement. */
-.rp-brand, .rp-cam, .rp-keys, .rp-names-btn, .rp-lede, .rp-toggles, .rp-legend, .rp-row-stats {
+.rp-brand, .rp-cam, .rp-keys, .rp-names-btn, .rp-lede, .rp-toggles, .rp-legend {
   transition: opacity 900ms ease;
 }
 .rp-page[data-idle="true"] .rp-brand,
@@ -109,8 +109,7 @@ body {
 .rp-page[data-idle="true"] .rp-names-btn,
 .rp-page[data-idle="true"] .rp-lede,
 .rp-page[data-idle="true"] .rp-toggles,
-.rp-page[data-idle="true"] .rp-legend,
-.rp-page[data-idle="true"] .rp-row-stats { opacity: 0.18; }
+.rp-page[data-idle="true"] .rp-legend { opacity: 0.18; }
 .rp-head > * { pointer-events: auto; }
 
 .rp-brand {
