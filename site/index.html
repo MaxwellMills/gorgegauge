@@ -63,16 +63,6 @@
       </div>
     </section>
 
-    <!-- River Pulse card — hidden until JS loads pulse data -->
-    <section class="pulse-strip" id="pulseStrip">
-      <div class="pulse-head">
-        <span class="pulse-label">River Pulse · <span id="pulseDate">today</span></span>
-        <a id="pulseLink" class="pulse-link" href="/pulse.html">Every gauged river, every day since Jan 2025 →</a>
-      </div>
-      <div class="pulse-bars" id="pulseBars"></div>
-      <div class="pulse-foot">Height is the day's flow (square-root scale) · colour is water temperature · cfs</div>
-    </section>
-
     <!-- Weather strip — hidden until JS loads station data -->
     <section class="weather-strip" id="weatherStrip">
       <div class="weather-head">
@@ -171,6 +161,5 @@
   window.REPORTS_API = "https://6k000v78qa.execute-api.us-east-2.amazonaws.com/prod/report";
 </script>
   <script src="appv6.js"></script>
-  <script src="pulse-card.js"></script>
 </body>
 </html>
