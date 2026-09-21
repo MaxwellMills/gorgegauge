@@ -110,6 +110,16 @@ body {
 .rp-page[data-idle="true"] .rp-lede,
 .rp-page[data-idle="true"] .rp-toggles,
 .rp-page[data-idle="true"] .rp-legend { opacity: 0.18; }
+/* Touch screens have no pointer to wake the chrome, so it never fades there. */
+@media (hover: none) {
+  .rp-page[data-idle="true"] .rp-brand,
+  .rp-page[data-idle="true"] .rp-cam,
+  .rp-page[data-idle="true"] .rp-keys,
+  .rp-page[data-idle="true"] .rp-names-btn,
+  .rp-page[data-idle="true"] .rp-lede,
+  .rp-page[data-idle="true"] .rp-toggles,
+  .rp-page[data-idle="true"] .rp-legend { opacity: 1; }
+}
 .rp-head > * { pointer-events: auto; }
 
 .rp-brand {
