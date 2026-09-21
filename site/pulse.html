@@ -5,15 +5,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>The Gorge's River Pulse — GorgeGauge</title>
-  <meta name="description" content="Every gauged river of the Columbia Gorge standing as a wall of water whose height is that day's flow, rising and draining through the seasons since October 2021. Play, scrub, turn, and hover any river." />
+  <meta name="description" content="Twenty gauged rivers of the Columbia Gorge drawn as walls of water. Height is the day's flow, width the long-term mean, colour the water temperature. Every day since October 2021." />
   <meta property="og:title" content="The Gorge's River Pulse — GorgeGauge" />
-  <meta property="og:description" content="Every gauged river of the Columbia Gorge as a wall of water: height is the day's flow, width the long-term mean, colour the water temperature. Every day since October 2021." />
+  <meta property="og:description" content="Twenty gauged rivers of the Columbia Gorge drawn as walls of water. Height is the day's flow, width the long-term mean, colour the water temperature. Every day since October 2021." />
   <meta property="og:url" content="https://gorgegauge.com/pulse.html" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="GorgeGauge" />
   <meta name="twitter:card" content="summary" />
   <meta name="twitter:title" content="The Gorge's River Pulse — GorgeGauge" />
-  <meta name="twitter:description" content="Every gauged river of the Columbia Gorge as a wall of water, every day since October 2021." />
+  <meta name="twitter:description" content="Twenty gauged rivers of the Columbia Gorge drawn as walls of water, every day since October 2021." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -35,7 +35,7 @@
       </nav>
       <h1 class="rp-title">The Gorge's River Pulse</h1>
       <p class="rp-kicker">EVERY GAUGED RIVER, EVERY DAY SINCE OCTOBER 2021</p>
-      <p class="rp-lede">height · the day's flow against each river's norm — width · long-term mean — colour · water temperature</p>
+      <p class="rp-lede">Height: the day's flow against the river's norm. Width: long-term mean. Colour: water temperature.</p>
       <button class="rp-names-btn" id="namesBtn" type="button" aria-expanded="false">
         <span id="namesCount">20 gauged rivers</span> ▸
       </button>
@@ -55,8 +55,8 @@
       <div class="rp-cam-gap"></div>
       <button type="button" data-cam="turnLeft" title="Turn left">↺</button>
       <button type="button" data-cam="turnRight" title="Turn right">↻</button>
-      <button type="button" data-cam="tiltUp" title="Tilt toward top-down">▲</button>
-      <button type="button" data-cam="tiltDown" title="Tilt toward side-on">▼</button>
+      <button type="button" data-cam="tiltUp" title="Tilt up">▲</button>
+      <button type="button" data-cam="tiltDown" title="Tilt down">▼</button>
       <div class="rp-cam-gap"></div>
       <button type="button" data-cam="reset" class="rp-cam-reset" title="Reset view (R)">RESET</button>
     </div>
@@ -64,7 +64,7 @@
     <div class="rp-tip" id="tip" hidden></div>
 
     <div class="rp-loading" id="loading">
-      <span>Loading five years of river data…</span>
+      <span>Loading…</span>
     </div>
 
     <footer class="rp-foot">
@@ -75,14 +75,13 @@
           <div class="rp-gauge-k">GORGE TRIBUTARIES COMBINED</div>
           <div class="rp-gauge-v"><span id="tribValue">—</span> <span class="rp-gauge-u" id="tribUnit">ft³/s</span></div>
           <div class="rp-gauge-bar" id="tribBar"><i></i></div>
-          <div class="rp-gauge-l" id="tribNote">seven rivers, Deschutes to Sandy</div>
+          <div class="rp-gauge-l" id="tribNote">seven rivers</div>
         </div>
 
         <div class="rp-gauge rp-gauge-col">
           <div class="rp-gauge-k">COLUMBIA AT THE DALLES</div>
           <div class="rp-gauge-v"><span id="colValue">—</span> <span class="rp-gauge-u" id="colUnit">ft³/s</span></div>
           <div class="rp-gauge-bar" id="colBar"><i></i></div>
-          <div class="rp-gauge-l" id="colNote">main stem</div>
         </div>
 
         <div class="rp-legend">

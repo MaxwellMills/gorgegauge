@@ -221,7 +221,7 @@
     document.getElementById("namesCount").textContent = `${rivers.length} gauged rivers`;
     const counted = rivers.filter((r) => r.counted);
     document.getElementById("tribNote").textContent =
-      `${wordNumber(counted.length)} rivers, ${counted[0].short} to ${counted[counted.length - 1].short}`;
+      `${wordNumber(counted.length)} rivers`;
     document.getElementById("dataAge").textContent = `data through ${fmtDateShort(dayCount - 1)}`;
     const since = new Date(fl.start + "T00:00:00Z").toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
     document.querySelector(".rp-kicker").textContent = `EVERY GAUGED RIVER, EVERY DAY SINCE ${since.toUpperCase()}`;
@@ -769,10 +769,9 @@
 
     const label = document.getElementById("sparkLabel");
     const v = combined[day];
-    const what = isPhone() ? "" : " from the Gorge tributaries";
     label.innerHTML = v == null
       ? `<span class="m">no data · ${fmtDateShort(day)}</span>`
-      : `<b>${fmtFlow(v, false)}</b> <span class="m">${unitLabel()}${what} · ${fmtDateShort(day)}</span>`;
+      : `<b>${fmtFlow(v, false)}</b> <span class="m">${unitLabel()} · ${fmtDateShort(day)}</span>`;
     const lo = (loopFrom / (dayCount - 1)) * 100;
     const pct = Math.max(Math.min(lo + 12, 80), Math.min(91, (day / (dayCount - 1)) * 100));
     label.style.left = `${pct}%`;
@@ -783,7 +782,7 @@
   function tempNote(r, i) {
     const e = r.tempEst[i];
     if (!e) return "";
-    return e === "norm" ? " (seasonal norm, gauge gap)" : ` (est. from the ${e})`;
+    return e === "norm" ? " (typical for the date)" : ` (no gauge; follows the ${e})`;
   }
   function fmtTemp(t) { return unit === "cfs" ? `${(t * 1.8 + 32).toFixed(0)} °F` : `${t.toFixed(1)} °C`; }
 
@@ -863,9 +862,9 @@
       document.getElementById("husumValue").textContent = reading ? `${reading.level.toFixed(1)} ft` : "—";
       document.getElementById("husumNote").textContent = reading
         ? (reading.low != null && reading.high != null && reading.high - reading.low >= 0.15
-          ? `trail cam, ${reading.low.toFixed(1)}–${reading.high.toFixed(1)} ft across photos`
+          ? `trail cam · ${reading.low.toFixed(1)}–${reading.high.toFixed(1)} ft across photos`
           : "trail cam")
-        : "no trail-cam reading that day";
+        : "no reading that day";
     }
 
     document.getElementById("playBtn").textContent = playing ? "❚❚" : "▶";
@@ -979,15 +978,13 @@
   function showTip(r, x, y) {
     if (!r) { tip.hidden = true; return; }
     const v = r.cfs[day], t = r.temp[day];
-    const normal = r.normal[dayOfYearLeap(day)];
     const ratio = v != null && r.mean ? v / r.mean : null;
     const vsMean = ratio == null ? "" : ratio >= 1 ? `${ratio.toFixed(1)}× its mean` : `${Math.round(ratio * 100)}% of its mean`;
-    const pct = v != null && normal ? Math.round((v / normal) * 100) : null;
     tip.innerHTML =
       `<b>${r.name}</b>` +
       `<span class="n">${fmtFlow(v, false)}</span> <span class="m">${v == null ? "" : unitLabel()}</span><br>` +
       `<span class="m">${vsMean}${t != null ? ` · ${r.tempEst[day] ? "~" : ""}${fmtTemp(t)}${tempNote(r, day)}` : " · no temperature gauge"}</span><br>` +
-      `<span class="m">mean ${fmtFlow(r.mean)}${pct != null ? ` · ${pct}% of normal for ${fmtDateShort(day).slice(0, -5)}` : ""}</span>`;
+      `<span class="m">mean ${fmtFlow(r.mean)}</span>`;
     tip.hidden = false;
     const tw = tip.offsetWidth, th = tip.offsetHeight;
     tip.style.left = `${Math.min(x + 14, W - tw - 8)}px`;
@@ -1142,8 +1139,8 @@
     const lede = document.querySelector(".rp-lede");
     if (!lede) return;
     lede.textContent = heightMode === "relative"
-      ? "height · the day's flow against each river's norm — width · long-term mean — colour · water temperature"
-      : "height · the day's flow — width · long-term mean — colour · water temperature";
+      ? "Height: the day's flow against the river's norm. Width: long-term mean. Colour: water temperature."
+      : "Height: the day's flow. Width: long-term mean. Colour: water temperature.";
   }
   applyHeightCopy();
 
