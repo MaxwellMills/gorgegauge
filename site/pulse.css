@@ -8,7 +8,7 @@
   --bg: #b7bfb2;
   --table: #c4cbbf;
   --ink: #23272a;
-  --muted: #4d5450;
+  --muted: #3f4643;
   --faint: rgba(35, 39, 42, 0.32);
   --panel: rgba(255, 255, 255, 0.55);
   --panel-solid: #dfe3dc;
@@ -100,7 +100,7 @@ body {
 }
 
 /* Idle: the map carries the page; the controls come back on any movement. */
-.rp-brand, .rp-cam, .rp-keys, .rp-names-btn, .rp-lede, .rp-toggles, .rp-legend {
+.rp-brand, .rp-cam, .rp-keys, .rp-names-btn, .rp-lede, .rp-toggles {
   transition: opacity 900ms ease;
 }
 .rp-page[data-idle="true"] .rp-brand,
@@ -108,8 +108,7 @@ body {
 .rp-page[data-idle="true"] .rp-keys,
 .rp-page[data-idle="true"] .rp-names-btn,
 .rp-page[data-idle="true"] .rp-lede,
-.rp-page[data-idle="true"] .rp-toggles,
-.rp-page[data-idle="true"] .rp-legend { opacity: 0.18; }
+.rp-page[data-idle="true"] .rp-toggles { opacity: 0.18; }
 /* Touch screens have no pointer to wake the chrome, so it never fades there. */
 @media (hover: none) {
   .rp-page[data-idle="true"] .rp-brand,
@@ -117,8 +116,7 @@ body {
   .rp-page[data-idle="true"] .rp-keys,
   .rp-page[data-idle="true"] .rp-names-btn,
   .rp-page[data-idle="true"] .rp-lede,
-  .rp-page[data-idle="true"] .rp-toggles,
-  .rp-page[data-idle="true"] .rp-legend { opacity: 1; }
+  .rp-page[data-idle="true"] .rp-toggles { opacity: 1; }
 }
 .rp-head > * { pointer-events: auto; }
 
@@ -446,7 +444,7 @@ body {
   color: var(--muted);
 }
 .rp-months span { position: absolute; top: 0; transform: translateX(0); white-space: nowrap; }
-.rp-months span.tick { transform: translateX(-50%); opacity: 0.6; }
+.rp-months span.tick { transform: translateX(-50%); opacity: 0.8; }
 
 .rp-row-stats { justify-content: space-between; flex-wrap: wrap; row-gap: 4px; align-items: baseline; }
 .rp-row-stats { min-height: 26px; }
@@ -485,6 +483,10 @@ body {
   .rp-lede { display: none; }
   .rp-legend { display: none; }
 }
+/* Laptop-height windows: a shorter camera stack so it clears the footer toggles. */
+@media (max-height: 820px) and (min-width: 721px) {
+  .rp-cam-pad, .rp-cam [data-cam="tiltUp"], .rp-cam [data-cam="tiltDown"] { display: none; }
+}
 
 /* Phones (and short landscape screens) ------------------------------------ */
 
@@ -512,13 +514,19 @@ body {
   .rp-spark-label { left: auto !important; right: 0; transform: none; font-size: 12px; }
   .rp-months { font-size: 10.5px; }
   .rp-stat-v { font-size: 17px; }
+  .rp-stat-k { white-space: normal; }
+  .rp-row-stats { row-gap: 2px; }
+  .rp-btn { width: 40px; height: 40px; }
+  .rp-units button { min-height: 40px; }
 }
 
 @media (max-height: 520px) and (orientation: landscape) {
   .rp-title, .rp-kicker, .rp-row-stats { display: none; }
   .rp-head { padding: 6px 16px; }
   .rp-foot { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; padding: 4px 16px calc(6px + env(safe-area-inset-bottom)); }
-  .rp-row-play { grid-column: 1 / -1; margin-top: 18px; }
+  .rp-row-play { grid-column: 1 / -1; margin-top: 6px; }
+  .rp-toggles, .rp-gauge { display: none; }
+  .rp-spark { height: 30px; }
   .rp-date { width: auto; font-size: 16px; }
   .rp-cam { display: none; }   /* pinch and drag cover zoom and turn */
   .rp-names { max-height: calc(100vh - 120px); }

@@ -36,7 +36,7 @@
       </nav>
       <h1 class="rp-title">The Gorge's River Pulse</h1>
       <p class="rp-kicker">EVERY GAUGED RIVER, EVERY DAY SINCE OCTOBER 2021</p>
-      <p class="rp-lede">Height: the day's flow against the river's norm. Width: long-term mean. Colour: water temperature.</p>
+      <p class="rp-lede">Height: the day's flow against the river's normal. Width: long-term average. Color: water temperature.</p>
       <button class="rp-names-btn" id="namesBtn" type="button" aria-expanded="false">
         <span id="namesCount">20 gauged rivers</span> ▸
       </button>
@@ -76,7 +76,7 @@
           <div class="rp-gauge-k">GORGE TRIBUTARIES COMBINED</div>
           <div class="rp-gauge-v"><span id="tribValue">—</span> <span class="rp-gauge-u" id="tribUnit">ft³/s</span></div>
           <div class="rp-gauge-bar" id="tribBar"><i></i></div>
-          <div class="rp-gauge-l" id="tribNote">seven rivers</div>
+          <div class="rp-gauge-l" id="tribNote" title="Deschutes, John Day, Klickitat, Hood, White Salmon, Wind, Sandy">seven rivers</div>
         </div>
 
         <div class="rp-gauge rp-gauge-col">
@@ -94,8 +94,8 @@
         <div class="rp-toggles">
           <div class="rp-units" role="group" aria-label="Wall height">
             <span class="rp-units-k">HEIGHT</span>
-            <button type="button" data-height="relative" class="on" title="Each river against its own long-term mean">vs normal</button>
-            <button type="button" data-height="flow" title="The day's discharge, square-root scale">flow</button>
+            <button type="button" data-height="relative" class="on" title="Each river against its own long-term average">vs normal</button>
+            <button type="button" data-height="flow" title="The day's flow, square-root scale">flow</button>
           </div>
           <div class="rp-units" role="group" aria-label="Units">
             <button type="button" data-unit="cfs" class="on">ft³/s</button>
@@ -109,7 +109,7 @@
 
       <div class="rp-row rp-row-play">
         <button class="rp-btn" id="playBtn" type="button" title="Play / pause (space)" aria-label="Play">▶</button>
-        <button class="rp-btn rp-btn-loop" id="loopBtn" type="button" title="Loop playback (L)" aria-label="Loop playback" aria-pressed="true">∞</button>
+        <button class="rp-btn rp-btn-loop" id="loopBtn" type="button" title="Loop the past year (L)" aria-label="Loop the past year" aria-pressed="true">∞</button>
         <div class="rp-spark-wrap">
           <div class="rp-spark-label" id="sparkLabel"></div>
           <canvas id="spark" class="rp-spark" role="slider" aria-valuemin="0" aria-label="Timeline: Gorge tributaries combined, day by day"></canvas>
@@ -121,7 +121,7 @@
       <div class="rp-row rp-row-stats">
         <div class="rp-stat">
           <span class="rp-stat-v" id="ratioValue">—</span>
-          <span class="rp-stat-k" id="ratioNote">peak day to floor day</span>
+          <span class="rp-stat-k" id="ratioNote">peak day vs lowest day</span>
         </div>
         <div class="rp-stat rp-stat-rain" id="rainStat" hidden>
           <span class="rp-stat-k" id="rainLabel">RAIN AT HOOD RIVER ·</span>
@@ -129,7 +129,7 @@
           <span class="rp-stat-k" id="rainWeek"></span>
         </div>
         <div class="rp-stat rp-stat-husum" id="husumStat" hidden>
-          <span class="rp-stat-k">HUSUM STAFF ·</span>
+          <span class="rp-stat-k">HUSUM GAUGE ·</span>
           <span class="rp-stat-v" id="husumValue">—</span>
           <span class="rp-stat-k" id="husumNote">trail cam</span>
         </div>
@@ -137,7 +137,7 @@
       </div>
 
       <div class="rp-keys">
-        <span class="rp-hint">drag turns · wheel zooms · hover a river · space plays</span>
+        <span class="rp-hint">drag turns · shift-drag pans · wheel zooms · double-click resets · ← → step days · space plays</span>
         <span class="rp-credit">USGS · GorgeGauge trail cam · <span id="dataAge"></span></span>
       </div>
     </footer>

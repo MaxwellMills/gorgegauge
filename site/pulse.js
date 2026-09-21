@@ -515,7 +515,7 @@
     let inBatch = 0;
     ctx.beginPath();
     for (const s of segs) {
-      if (s.cfs == null) continue;
+      if (s.cfs == null || isPhone()) continue;      // phones skip the shadow pass
       const { pts } = s.wall;
       const p0 = pts[s.i], p1 = pts[s.i + 1];
       const a = project(p0[0], p0[1], groundZ(p0[0], p0[1])), b = project(p1[0], p1[1], groundZ(p1[0], p1[1]));
@@ -673,16 +673,21 @@
     return x >= bboxKm.x0 && x <= bboxKm.x1 && y >= bboxKm.y0 && y <= bboxKm.y1;
   }
 
-  // Rivers are named only when pointed at; the map speaks for itself.
+  // The Gorge rivers and the Columbia carry a quiet name; the rest are
+  // named when pointed at, and a pointed-at river shows its flow.
   function drawRiverLabels() {
+    const small = isPhone();
     for (const r of rivers) {
       const lit = r === hovered || (r === focused && performance.now() < focusUntil);
-      if (!lit) continue;
+      const quiet = !lit && (r.counted || r.kind === "spine") && !small;
+      if (!lit && !quiet) continue;
       const h = heightKm(r.cfs[day], r) + groundZ(r.labelPt[0], r.labelPt[1]);
       const [sx, sy] = project(r.labelPt[0], r.labelPt[1], h);
       const v = r.cfs[day];
-      const text = r === hovered || r === focused ? `${r.short} · ${fmtFlow(v)}` : r.short;
-      haloText(text, sx, sy - 9, { align: "center", baseline: "bottom" });
+      const text = lit ? `${r.short} · ${fmtFlow(v)}` : r.short;
+      haloText(text, sx, sy - 9, lit
+        ? { align: "center", baseline: "bottom" }
+        : { align: "center", baseline: "bottom", color: theme.muted, font: `400 10px ${cssVar("--mono")}` });
     }
   }
 
@@ -834,7 +839,7 @@
     return { name: rain.points[best].name, mm: row ? row[best] : null, cm: srow ? srow[best] : null };
   }
 
-  function fmtRain(mm) { return unit === "cfs" ? `${(mm / 25.4).toFixed(2)} in` : `${mm.toFixed(1)} mm`; }
+  function fmtRain(mm) { return unit === "cfs" ? `${(mm / 25.4).toFixed(2)} in` : `${mm.toFixed(0)} mm`; }
   function fmtSnow(cm) { return unit === "cfs" ? `${(cm / 2.54).toFixed(1)} in` : `${cm.toFixed(0)} cm`; }
 
   function rainNote(r) {
@@ -863,7 +868,7 @@
     for (let i = Math.max(0, day - 6); i <= day; i++) { const w = rain.precip[i]; if (w && w[k] != null) week += w[k]; }
     document.getElementById("rainLabel").textContent = snowing ? "SNOW AT HOOD RIVER ·" : "RAIN AT HOOD RIVER ·";
     document.getElementById("rainValue").textContent = snowing ? fmtSnow(cm) : mm >= 0.3 ? fmtRain(mm) : "dry";
-    document.getElementById("rainWeek").textContent = `· ${week >= 0.3 ? fmtRain(week) : "none"} past 7 days`;
+    document.getElementById("rainWeek").textContent = `· ${week >= 0.3 ? fmtRain(week) : "none"}${snowing ? " rain" : ""} past 7 days`;
 
     // The button says when it is on but nothing is falling anywhere today.
     const anyToday = (rain.precip[day] || []).some((v) => v != null && v >= 1) || (rain.snow[day] || []).some((v) => v != null && v >= 0.5);
@@ -989,8 +994,8 @@
     document.getElementById("colUnit").textContent = unitLabel();
     document.querySelector("#colBar i").style.width = c == null ? "0%" : `${(c / cmax) * 100}%`;
 
-    document.getElementById("legendLo").textContent = fmtTemp(TEMP_LO);
-    document.getElementById("legendHi").textContent = fmtTemp(TEMP_HI);
+    document.getElementById("legendLo").textContent = unit === "cfs" ? `${Math.round(TEMP_LO * 1.8 + 32)} °F` : `${TEMP_LO} °C`;
+    document.getElementById("legendHi").textContent = unit === "cfs" ? `${Math.round(TEMP_HI * 1.8 + 32)} °F` : `${TEMP_HI} °C`;
     const temps = rivers.filter((r) => r.counted && r.temp[day] != null).map((r) => r.temp[day]).sort((a, b) => a - b);
     if (temps.length) document.querySelector("#tribBar i").style.background = rgb(tempRgb(temps[Math.floor(temps.length / 2)]));
     const ct = rivers.find((r) => r.kind === "spine");
@@ -1002,13 +1007,13 @@
     const peak = combined[peakDay], floor = combined[floorDay];
     document.getElementById("ratioValue").textContent = peak && floor ? `${(peak / floor).toFixed(1)}×` : "—";
     document.getElementById("ratioNote").textContent =
-      `peak day to floor day, ${fmtDateShort(peakDay)} vs ${fmtDateShort(floorDay)}`;
+      isPhone() ? "peak day vs lowest day" : `peak day vs lowest day, ${fmtDateShort(peakDay)} and ${fmtDateShort(floorDay)}`;
     document.getElementById("peakBtn").textContent = `peak day: ${fmtDateShort(peakDay)} →`;
 
     const hs = document.getElementById("husumStat");
     const reading = husum[dayIso(day)];
     if (Object.keys(husum).length) {
-      hs.hidden = false;
+      hs.hidden = !reading && isPhone();
       document.getElementById("husumValue").textContent = reading ? `${reading.level.toFixed(1)} ft` : "—";
       document.getElementById("husumNote").textContent = reading
         ? (reading.low != null && reading.high != null && reading.high - reading.low >= 0.15
@@ -1130,12 +1135,12 @@
     if (!r) { tip.hidden = true; return; }
     const v = r.cfs[day], t = r.temp[day];
     const ratio = v != null && r.mean ? v / r.mean : null;
-    const vsMean = ratio == null ? "" : ratio >= 1 ? `${ratio.toFixed(1)}× its mean` : `${Math.round(ratio * 100)}% of its mean`;
+    const vsMean = ratio == null ? "" : ratio >= 1 ? `${ratio.toFixed(1)}× normal` : `${Math.round(ratio * 100)}% of normal`;
     tip.innerHTML =
       `<b>${r.name}</b>` +
       `<span class="n">${fmtFlow(v, false)}</span> <span class="m">${v == null ? "" : unitLabel()}</span><br>` +
       `<span class="m">${vsMean}${t != null ? ` · ${r.tempEst[day] ? "~" : ""}${fmtTemp(t)}${tempNote(r, day)}` : " · no temperature gauge"}</span><br>` +
-      `<span class="m">mean ${fmtFlow(r.mean)}${rainNote(r)}</span>`;
+      `<span class="m">normal ${fmtFlow(r.mean)}${rainNote(r)}</span>`;
     tip.hidden = false;
     const tw = tip.offsetWidth, th = tip.offsetHeight;
     tip.style.left = `${Math.min(x + 14, W - tw - 8)}px`;
@@ -1290,8 +1295,8 @@
     const lede = document.querySelector(".rp-lede");
     if (!lede) return;
     lede.textContent = heightMode === "relative"
-      ? "Height: the day's flow against the river's norm. Width: long-term mean. Colour: water temperature."
-      : "Height: the day's flow. Width: long-term mean. Colour: water temperature.";
+      ? "Height: the day's flow against the river's normal. Width: long-term average. Color: water temperature."
+      : "Height: the day's flow. Width: long-term average. Color: water temperature.";
   }
   applyHeightCopy();
 
@@ -1344,7 +1349,7 @@
         focused = null; focusUntil = 0;
         const panel = document.getElementById("namesPanel");
         panel.hidden = true; document.getElementById("namesBtn").setAttribute("aria-expanded", "false");
-        update(); break;
+        update(); updateNames(); break;
       }
     }
   });
