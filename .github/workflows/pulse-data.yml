@@ -1,0 +1,54 @@
+name: River Pulse data
+
+on:
+  schedule:
+    - cron: '30 15 * * *'   # 08:30 PDT / 07:30 PST, after USGS has posted yesterday's daily means
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "Rebuild the whole flow history instead of appending the last 45 days"
+        type: boolean
+        default: false
+      geometry:
+        description: "Rebuild river geometry (only needed when the gauge list changes)"
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    name: Append USGS daily values → pulse/flows.json
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install boto3 requests
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-2
+
+      - name: Build and upload
+        env:
+          PULSE_UPLOAD: "1"
+          PULSE_FULL: ${{ inputs.full }}
+          PULSE_GEOMETRY: ${{ inputs.geometry }}
+        run: python3 -m src.build_pulse
+
+      - name: Build and upload terrain (geometry rebuilds only)
+        if: ${{ inputs.geometry }}
+        env:
+          PULSE_UPLOAD: "1"
+        run: |
+          pip install pillow
+          python3 -m src.build_terrain

@@ -38,3 +38,9 @@ site/latestTroutCreek.json
 .vscode/
 .idea/
 *.swp
+
+# River Pulse data (built by src/build_pulse.py and src/build_terrain.py,
+# uploaded to S3 by .github/workflows/pulse-data.yml; the site deploy skips pulse/)
+site/pulse/*.json
+site/pulse/terrain.png
+site/husumGaugeHistory.json

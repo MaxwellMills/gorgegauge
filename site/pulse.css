@@ -1,0 +1,506 @@
+/* The Gorge's River Pulse — full-viewport map with typographic overlays. */
+
+:root {
+  --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* The table the rivers stand on. Muted so the temperature palette carries. */
+  --bg: #b7bfb2;
+  --table: #c4cbbf;
+  --ink: #23272a;
+  --muted: #4d5450;
+  --faint: rgba(35, 39, 42, 0.32);
+  --panel: rgba(255, 255, 255, 0.55);
+  --panel-solid: #dfe3dc;
+  --line: rgba(35, 39, 42, 0.35);
+  --accent: #1f5f73;
+  --spark: #3c6f80;
+  --spark-fill: rgba(60, 111, 128, 0.28);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #171c22;
+    --table: #1e252d;
+    --ink: #e6e9e4;
+    --muted: #a6ada7;
+    --faint: rgba(230, 233, 228, 0.28);
+    --panel: rgba(23, 28, 34, 0.6);
+    --panel-solid: #252c34;
+    --line: rgba(230, 233, 228, 0.3);
+    --accent: #7ec3d6;
+    --spark: #7ec3d6;
+    --spark-fill: rgba(126, 195, 214, 0.22);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #171c22;
+  --table: #1e252d;
+  --ink: #e6e9e4;
+  --muted: #a6ada7;
+  --faint: rgba(230, 233, 228, 0.28);
+  --panel: rgba(23, 28, 34, 0.6);
+  --panel-solid: #252c34;
+  --line: rgba(230, 233, 228, 0.3);
+  --accent: #7ec3d6;
+  --spark: #7ec3d6;
+  --spark-fill: rgba(126, 195, 214, 0.22);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body { height: 100%; }
+
+body {
+  font-family: var(--serif);
+  background: var(--bg);
+  color: var(--ink);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+.rp-page {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+}
+
+.rp-map {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  cursor: grab;
+}
+.rp-page[data-dragging="true"] .rp-map { cursor: grabbing; }
+
+/* Header ------------------------------------------------------------------ */
+
+.rp-head {
+  position: absolute;
+  z-index: 2;
+  top: 0; left: 0; right: 0;
+  padding: calc(12px + env(safe-area-inset-top)) 18px 40px;
+  pointer-events: none;
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--bg) 92%, transparent) 0%,
+    color-mix(in srgb, var(--bg) 70%, transparent) 55%,
+    transparent);
+}
+
+/* Idle: the map carries the page; the controls come back on any movement. */
+.rp-brand, .rp-cam, .rp-keys, .rp-names-btn, .rp-lede, .rp-toggles, .rp-legend, .rp-row-stats {
+  transition: opacity 900ms ease;
+}
+.rp-page[data-idle="true"] .rp-brand,
+.rp-page[data-idle="true"] .rp-cam,
+.rp-page[data-idle="true"] .rp-keys,
+.rp-page[data-idle="true"] .rp-names-btn,
+.rp-page[data-idle="true"] .rp-lede,
+.rp-page[data-idle="true"] .rp-toggles,
+.rp-page[data-idle="true"] .rp-legend,
+.rp-page[data-idle="true"] .rp-row-stats { opacity: 0.18; }
+.rp-head > * { pointer-events: auto; }
+
+.rp-brand {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  align-items: baseline;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.rp-brand a { color: inherit; text-decoration: none; }
+.rp-brand a:hover { color: var(--ink); }
+.rp-brand .rp-home {
+  font-weight: 500;
+  color: var(--ink);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.rp-brand .on { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+
+.rp-title {
+  margin-top: 10px;
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: clamp(26px, 3.6vw, 40px);
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+}
+
+.rp-kicker {
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: clamp(10.5px, 1.05vw, 12.5px);
+  letter-spacing: 0.14em;
+  color: var(--ink);
+}
+
+.rp-lede {
+  margin-top: 8px;
+  max-width: 40ch;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.45;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+.rp-region {
+  margin-top: 12px;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--mono);
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 4px;
+}
+.rp-region-k { font-size: 11px; letter-spacing: 0.12em; color: var(--ink); }
+.rp-region-v { font-size: 10.5px; letter-spacing: 0.04em; color: var(--muted); }
+
+.rp-names-btn {
+  margin-top: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 500 11px/1 var(--mono);
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 10px;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+.rp-names-btn[aria-expanded="true"] { background: var(--panel-solid); }
+
+.rp-names {
+  margin-top: 6px;
+  width: min(320px, calc(100vw - 36px));
+  max-height: min(46vh, 420px);
+  overflow: auto;
+  background: var(--panel-solid);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.rp-names button {
+  display: grid;
+  grid-template-columns: 10px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.rp-names button:hover, .rp-names button.on { background: var(--panel); }
+.rp-names i {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border-radius: 2px;
+  background: var(--muted);
+}
+.rp-names .v { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* Camera buttons ---------------------------------------------------------- */
+
+.rp-cam {
+  position: absolute;
+  top: 110px;
+  right: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+}
+.rp-cam button {
+  width: 30px; height: 30px;
+  font: 500 13px/1 var(--mono);
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+.rp-cam button:hover { background: var(--panel-solid); }
+.rp-cam .rp-cam-reset { width: auto; padding: 0 9px; font-size: 10.5px; letter-spacing: 0.08em; }
+.rp-cam-gap { height: 6px; }
+.rp-cam-pad {
+  display: grid;
+  grid-template-columns: repeat(3, 30px);
+  grid-template-rows: repeat(3, 30px);
+  gap: 4px;
+}
+.rp-cam-pad button:nth-child(1) { grid-area: 1 / 2; }
+.rp-cam-pad button:nth-child(2) { grid-area: 2 / 1; }
+.rp-cam-pad button:nth-child(3) { grid-area: 2 / 3; }
+.rp-cam-pad button:nth-child(4) { grid-area: 3 / 2; }
+
+/* Tooltip ----------------------------------------------------------------- */
+
+.rp-tip {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  background: var(--panel-solid);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  max-width: 260px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--ink);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+}
+.rp-tip b { font-family: var(--serif); font-weight: 600; font-size: 14px; display: block; margin-bottom: 2px; }
+.rp-tip .m { color: var(--muted); }
+
+.rp-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  pointer-events: none;
+}
+.rp-page[data-state="ready"] .rp-loading { display: none; }
+.rp-page[data-state="error"] .rp-loading { color: #a83a2c; }
+
+/* Footer ------------------------------------------------------------------ */
+
+.rp-foot {
+  position: absolute;
+  z-index: 1;
+  left: 0; right: 0; bottom: 0;
+  padding: 10px 18px calc(14px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+  background: linear-gradient(0deg,
+    color-mix(in srgb, var(--bg) 96%, white) 0%,
+    color-mix(in srgb, var(--bg) 88%, transparent) 70%,
+    transparent);
+}
+.rp-foot > * { pointer-events: auto; }
+
+.rp-row { display: flex; align-items: flex-end; gap: 22px; }
+.rp-row-top { flex-wrap: wrap; row-gap: 10px; }
+
+.rp-date {
+  flex: 1 1 auto;
+  font-family: var(--serif);
+  font-size: clamp(20px, 2.6vw, 30px);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.rp-gauge { min-width: 180px; }
+.rp-gauge-k, .rp-legend-k, .rp-gauge-l, .rp-stat-k {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.rp-gauge-l { text-transform: none; letter-spacing: 0.04em; margin-top: 3px; }
+.rp-gauge-v {
+  font-family: var(--serif);
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  margin-top: 2px;
+}
+.rp-gauge-u { font-family: var(--serif); font-size: 14px; font-weight: 400; color: var(--muted); }
+.rp-gauge-bar {
+  height: 4px;
+  margin-top: 5px;
+  border-radius: 2px;
+  background: var(--faint);
+  overflow: hidden;
+}
+.rp-gauge-bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 120ms linear; }
+
+.rp-legend { min-width: 170px; }
+.rp-legend-bar {
+  height: 10px;
+  border-radius: 3px;
+  margin-top: 4px;
+  background: linear-gradient(90deg, #2b5f88 0%, #3a9a90 27%, #bdb88b 50%, #d98b4e 73%, #a83a2c 100%);
+}
+.rp-legend-ends {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.rp-toggles { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; align-self: center; }
+.rp-units-k {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  padding: 6px 4px 0 10px;
+  background: var(--panel);
+}
+.rp-tip .n { font-family: var(--serif); font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.rp-units {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: 11px;
+  align-self: center;
+}
+.rp-units button {
+  border: 0;
+  background: var(--panel);
+  color: var(--muted);
+  padding: 5px 10px;
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: 0.04em;
+}
+.rp-units button.on { background: var(--ink); color: var(--bg); }
+
+.rp-row-play { align-items: center; gap: 10px; margin-top: 24px; }
+.rp-btn {
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--panel-solid);
+  color: var(--ink);
+  font: 13px/1 var(--mono);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.rp-btn:hover { background: var(--ink); color: var(--bg); }
+.rp-btn-loop[aria-pressed="false"] { opacity: 0.45; }
+.rp-btn-speed { width: auto; padding: 0 10px; border-radius: 17px; font-size: 11px; }
+
+.rp-spark-wrap { position: relative; flex: 1 1 auto; min-width: 0; }
+.rp-spark { display: block; width: 100%; height: 54px; cursor: ew-resize; }
+.rp-spark-label {
+  position: absolute;
+  bottom: 100%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-family: var(--serif);
+  font-size: 13px;
+  color: var(--ink);
+  pointer-events: none;
+  padding-bottom: 2px;
+}
+.rp-spark-label b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.rp-spark-label .m { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+.rp-months {
+  position: relative;
+  height: 12px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--muted);
+}
+.rp-months span { position: absolute; top: 0; transform: translateX(0); white-space: nowrap; }
+.rp-months span.tick { transform: translateX(-50%); opacity: 0.6; }
+
+.rp-row-stats { justify-content: space-between; flex-wrap: wrap; row-gap: 4px; align-items: baseline; }
+.rp-row-stats { min-height: 26px; }
+.rp-stat { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.rp-stat-v { font-family: var(--serif); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; flex: 0 0 auto; }
+.rp-stat-k { text-transform: none; letter-spacing: 0.04em; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.rp-stat-husum .rp-stat-k:first-child { text-transform: uppercase; letter-spacing: 0.12em; }
+.rp-stat-link {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 11px/1.4 var(--mono);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.rp-stat-link:hover { color: var(--ink); }
+
+.rp-keys {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+/* Narrow or short desktop windows: keep the footer to two rows. */
+@media (max-width: 1120px) {
+  .rp-gauge-col { display: none; }
+}
+@media (max-height: 680px) and (min-width: 721px) {
+  .rp-lede { display: none; }
+  .rp-legend { display: none; }
+}
+
+/* Phones (and short landscape screens) ------------------------------------ */
+
+@media (max-width: 720px), (max-height: 520px) {
+  .rp-head { padding: calc(10px + env(safe-area-inset-top)) 16px 12px; }
+  .rp-lede, .rp-keys, .rp-legend, .rp-gauge-col, .rp-stat-link { display: none; }
+  .rp-names-btn { margin-top: 10px; min-height: 32px; padding: 8px 10px; }
+  .rp-names button { min-height: 32px; }
+  /* Anchor the camera stack under the header, measured by the script. */
+  .rp-cam { top: calc(var(--head-h, 190px) + 8px); bottom: auto; right: 10px; }
+  .rp-cam button { width: 36px; height: 36px; }
+  .rp-cam-pad, .rp-cam [data-cam="tiltUp"], .rp-cam [data-cam="tiltDown"],
+  .rp-cam [data-cam="turnLeft"], .rp-cam [data-cam="turnRight"] { display: none; }
+  .rp-cam .rp-cam-reset { height: 30px; }
+  .rp-tip { max-width: calc(100vw - 80px); }
+  .rp-foot { padding: 8px 16px calc(12px + env(safe-area-inset-bottom)); gap: 8px; }
+  .rp-row { gap: 12px; }
+  .rp-date { font-size: 20px; width: 100%; }
+  .rp-gauge { min-width: 0; flex: 1 1 auto; }
+  .rp-gauge-v { font-size: 19px; }
+  .rp-toggles { flex-direction: row; gap: 8px; align-self: flex-end; }
+  .rp-units button { min-height: 32px; }
+  .rp-units-k { display: none; }
+  .rp-row-play { margin-top: 22px; }
+  .rp-spark { height: 44px; }
+  .rp-spark-label { left: auto !important; right: 0; transform: none; font-size: 12px; }
+  .rp-months { font-size: 10.5px; }
+  .rp-stat-v { font-size: 17px; }
+}
+
+@media (max-height: 520px) and (orientation: landscape) {
+  .rp-title, .rp-kicker, .rp-row-stats { display: none; }
+  .rp-head { padding: 6px 16px; }
+  .rp-foot { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; padding: 4px 16px calc(6px + env(safe-area-inset-bottom)); }
+  .rp-row-play { grid-column: 1 / -1; margin-top: 18px; }
+  .rp-date { width: auto; font-size: 16px; }
+  .rp-cam { display: none; }   /* pinch and drag cover zoom and turn */
+  .rp-names { max-height: calc(100vh - 120px); }
+}

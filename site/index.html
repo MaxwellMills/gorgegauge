@@ -17,7 +17,7 @@
   <meta name="twitter:description" content="Live trail cam gauge reading for Husum Falls on the White Salmon River, WA. AI-estimated water level updated daily." />
   <meta name="twitter:image" content="https://gorgegauge.com/husum-preview.jpg" />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="stylesheet" href="stylesV2.css" />
+  <link rel="stylesheet" href="stylesV2.css?v=20260921" />
 </head>
 
 <body data-location="Trout Creek">
@@ -34,6 +34,8 @@
       | Live Conditions
       <span class="subtitle-sep">·</span>
       <a href="/gauges.html" class="disclaimer-link">Gorge Gauges</a>
+      <span class="subtitle-sep">·</span>
+      <a href="/pulse.html" class="disclaimer-link">River Pulse</a>
       <span class="subtitle-sep">·</span>
       <a href="/disclaimer.html" class="disclaimer-link">Disclaimer</a>
     </div>
@@ -59,6 +61,16 @@
         <span class="gauge-read-at" id="gaugeReadAt"></span>
         <span class="gauge-notes" id="gaugeNotes"></span>
       </div>
+    </section>
+
+    <!-- River Pulse card — hidden until JS loads pulse data -->
+    <section class="pulse-strip" id="pulseStrip">
+      <div class="pulse-head">
+        <span class="pulse-label">River Pulse · <span id="pulseDate">today</span></span>
+        <a id="pulseLink" class="pulse-link" href="/pulse.html">Every gauged river, every day since Jan 2025 →</a>
+      </div>
+      <div class="pulse-bars" id="pulseBars"></div>
+      <div class="pulse-foot">Height is the day's flow (square-root scale) · colour is water temperature · cfs</div>
     </section>
 
     <!-- Weather strip — hidden until JS loads station data -->
@@ -159,5 +171,6 @@
   window.REPORTS_API = "https://6k000v78qa.execute-api.us-east-2.amazonaws.com/prod/report";
 </script>
   <script src="appv6.js"></script>
+  <script src="pulse-card.js"></script>
 </body>
 </html>

@@ -29,4 +29,5 @@ jobs:
           aws s3 sync site/ s3://gorgegauge.com/ \
             --delete \
             --cache-control "public, max-age=60" \
-            --exclude "*.json"
+            --exclude "*.json" \
+            --exclude "pulse/*"

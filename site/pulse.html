@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<!-- gorgegauge -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>The Gorge's River Pulse — GorgeGauge</title>
+  <meta name="description" content="Every gauged river of the Columbia Gorge standing as a wall of water whose height is that day's flow, rising and draining through the seasons since October 2021. Play, scrub, turn, and hover any river." />
+  <meta property="og:title" content="The Gorge's River Pulse — GorgeGauge" />
+  <meta property="og:description" content="Every gauged river of the Columbia Gorge as a wall of water: height is the day's flow, width the long-term mean, colour the water temperature. Every day since October 2021." />
+  <meta property="og:url" content="https://gorgegauge.com/pulse.html" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="GorgeGauge" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="The Gorge's River Pulse — GorgeGauge" />
+  <meta name="twitter:description" content="Every gauged river of the Columbia Gorge as a wall of water, every day since October 2021." />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;0,8..60,600;1,8..60,400&display=swap" />
+  <link rel="stylesheet" href="pulse.css" />
+</head>
+
+<body>
+  <div class="rp-page" id="page" data-state="loading">
+    <canvas id="map" class="rp-map" aria-label="Map of Columbia Gorge rivers as walls of water"></canvas>
+
+    <header class="rp-head">
+      <nav class="rp-brand" aria-label="Site">
+        <a href="/" class="rp-home">GorgeGauge</a>
+        <a href="/index.html">Live conditions</a>
+        <a href="/gauges.html">Gorge gauges</a>
+        <span class="on">River pulse</span>
+        <a href="/disclaimer.html">Disclaimer</a>
+      </nav>
+      <h1 class="rp-title">The Gorge's River Pulse</h1>
+      <p class="rp-kicker">EVERY GAUGED RIVER, EVERY DAY SINCE OCTOBER 2021</p>
+      <p class="rp-lede">height · the day's flow against each river's norm — width · long-term mean — colour · water temperature</p>
+      <button class="rp-names-btn" id="namesBtn" type="button" aria-expanded="false">
+        <span id="namesCount">20 gauged rivers</span> ▸
+      </button>
+      <div class="rp-names" id="namesPanel" hidden></div>
+    </header>
+
+    <div class="rp-cam" aria-label="Camera">
+      <button type="button" data-cam="zoomIn" title="Zoom in (+)">+</button>
+      <button type="button" data-cam="zoomOut" title="Zoom out (−)">−</button>
+      <div class="rp-cam-gap"></div>
+      <div class="rp-cam-pad">
+        <button type="button" data-cam="panUp" title="Pan up">↑</button>
+        <button type="button" data-cam="panLeft" title="Pan left">←</button>
+        <button type="button" data-cam="panRight" title="Pan right">→</button>
+        <button type="button" data-cam="panDown" title="Pan down">↓</button>
+      </div>
+      <div class="rp-cam-gap"></div>
+      <button type="button" data-cam="turnLeft" title="Turn left">↺</button>
+      <button type="button" data-cam="turnRight" title="Turn right">↻</button>
+      <button type="button" data-cam="tiltUp" title="Tilt toward top-down">▲</button>
+      <button type="button" data-cam="tiltDown" title="Tilt toward side-on">▼</button>
+      <div class="rp-cam-gap"></div>
+      <button type="button" data-cam="reset" class="rp-cam-reset" title="Reset view (R)">RESET</button>
+    </div>
+
+    <div class="rp-tip" id="tip" hidden></div>
+
+    <div class="rp-loading" id="loading">
+      <span>Loading five years of river data…</span>
+    </div>
+
+    <footer class="rp-foot">
+      <div class="rp-row rp-row-top">
+        <div class="rp-date" id="dateLabel">—</div>
+
+        <div class="rp-gauge">
+          <div class="rp-gauge-k">GORGE TRIBUTARIES COMBINED</div>
+          <div class="rp-gauge-v"><span id="tribValue">—</span> <span class="rp-gauge-u" id="tribUnit">ft³/s</span></div>
+          <div class="rp-gauge-bar" id="tribBar"><i></i></div>
+          <div class="rp-gauge-l" id="tribNote">seven rivers, Deschutes to Sandy</div>
+        </div>
+
+        <div class="rp-gauge rp-gauge-col">
+          <div class="rp-gauge-k">COLUMBIA AT THE DALLES</div>
+          <div class="rp-gauge-v"><span id="colValue">—</span> <span class="rp-gauge-u" id="colUnit">ft³/s</span></div>
+          <div class="rp-gauge-bar" id="colBar"><i></i></div>
+          <div class="rp-gauge-l" id="colNote">main stem</div>
+        </div>
+
+        <div class="rp-legend">
+          <div class="rp-legend-k">WATER TEMPERATURE</div>
+          <div class="rp-legend-bar" id="legendBar"></div>
+          <div class="rp-legend-ends"><span id="legendLo">0 °C</span><span id="legendHi">22 °C</span></div>
+        </div>
+
+        <div class="rp-toggles">
+          <div class="rp-units" role="group" aria-label="Wall height">
+            <span class="rp-units-k">HEIGHT</span>
+            <button type="button" data-height="relative" class="on" title="Each river against its own long-term mean">vs normal</button>
+            <button type="button" data-height="flow" title="The day's discharge, square-root scale">flow</button>
+          </div>
+          <div class="rp-units" role="group" aria-label="Units">
+            <button type="button" data-unit="cfs" class="on">ft³/s</button>
+            <button type="button" data-unit="cms">m³/s</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="rp-row rp-row-play">
+        <button class="rp-btn" id="playBtn" type="button" title="Play / pause (space)" aria-label="Play">▶</button>
+        <button class="rp-btn rp-btn-loop" id="loopBtn" type="button" title="Loop playback (L)" aria-label="Loop playback" aria-pressed="true">∞</button>
+        <div class="rp-spark-wrap">
+          <div class="rp-spark-label" id="sparkLabel"></div>
+          <canvas id="spark" class="rp-spark" role="slider" aria-valuemin="0" aria-label="Timeline: Gorge tributaries combined, day by day"></canvas>
+          <div class="rp-months" id="months"></div>
+        </div>
+        <button class="rp-btn rp-btn-speed" id="speedBtn" type="button" title="Playback speed: 8 days per second">1×</button>
+      </div>
+
+      <div class="rp-row rp-row-stats">
+        <div class="rp-stat">
+          <span class="rp-stat-v" id="ratioValue">—</span>
+          <span class="rp-stat-k" id="ratioNote">peak day to floor day</span>
+        </div>
+        <div class="rp-stat rp-stat-husum" id="husumStat" hidden>
+          <span class="rp-stat-k">HUSUM STAFF ·</span>
+          <span class="rp-stat-v" id="husumValue">—</span>
+          <span class="rp-stat-k" id="husumNote">trail cam</span>
+        </div>
+        <button class="rp-stat rp-stat-link" id="peakBtn" type="button">peak day: — →</button>
+      </div>
+
+      <div class="rp-keys">
+        <span class="rp-hint">drag turns · wheel zooms · hover a river · space plays</span>
+        <span class="rp-credit">USGS · GorgeGauge trail cam · <span id="dataAge"></span></span>
+      </div>
+    </footer>
+  </div>
+
+  <script src="pulse-terrain.js"></script>
+  <script src="pulse.js"></script>
+</body>
+</html>
