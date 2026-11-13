@@ -25,6 +25,24 @@ Rewritten 2026-09-02. What changed and why:
   * Every run is appended to husumGaugeHistory.json, and the concurrent USGS
     reading at White Salmon nr Underwood is recorded alongside it, so a stuck
     value is detectable instead of invisible.
+
+Revised 2026-11-13, after the page sat at 2.2 ft for three days on a river
+near 0.9:
+
+  * Each frame is registered to the calibration frame before it is read.
+    The camera's view had shifted up by 7 rows between 2026-09-15 and
+    2026-10-03, which the fixed calibration turned into a 0.4 ft overread
+    for six weeks. Frames that do not match the calibrated view (glare on
+    the wall) are skipped instead of read.
+
+  * The waterline detector now tells a wet, silt-stained band on the lower
+    staff from the water below it, by requiring water-dark rows under the
+    step and using the staff's reflection as confirmation. See the notes
+    above detect_waterline for what it can and cannot separate.
+
+  * A calibrated camera's frame that the pixel path cannot read is skipped;
+    it is no longer handed to the model, whose readings on this camera were
+    off by a foot or more in either direction.
 """
 
 import os
@@ -463,24 +481,30 @@ def level_from_geometry(marks, waterline_y):
 
 # -- Per-camera calibration ---------------------------------------------------
 #
-# The cameras do not move, so from a given camera the staff occupies the same
-# few columns in every frame and each whole-foot hashmark sits on a fixed row.
-# With that pinned down, the waterline can be found from the pixels: the dry
-# staff is bright and unsaturated, the water is not, and the boundary is a
-# cliff in a per-row "whiteness" profile down the staff's column. The staff's
-# reflection continues the white stripe below the surface, but dimmer and
-# tinted, so it sits well under the cliff — which is exactly the thing the
-# model kept mistaking for the waterline.
+# The cameras do not move much, so from a given camera the staff occupies the
+# same few columns in every frame and each whole-foot hashmark sits on a fixed
+# row. With that pinned down, the waterline can be found from the pixels.
 #
 # Measured 2026-09-02 from a native-resolution copy of frame
 # 865509053179515-20-4-09022026115308-W1004538.JPG: staff column x 349-358,
 # staff top at row 232, numerals 6/5/4 readable at rows ~245/264/282, so
 # 18.5 px per foot, whiteness cliff at rows 338-341 on a day the water was
-# just under the 1 ft mark. Rows here are believed good to about ±3 px,
-# roughly ±0.15 ft. To refine: stand at the river, read the staff by eye at
-# the moment a photo fires, and shift "marks" so the reading matches.
+# just under the 1 ft mark. Rows are believed good to about ±3 px, roughly
+# ±0.15 ft. To refine: stand at the river, read the staff by eye at the
+# moment a photo fires, and shift "marks" so the reading matches.
 #
-# Rows and columns scale with frame size, so the 1280x960 HD uploads work
+# REGISTRATION (added 2026-11-13). Between 2026-09-15 and 2026-10-03 the
+# camera's view moved up by 7 rows and stayed there, which put every reading
+# about 0.4 ft high for six weeks. Each frame is now registered against the
+# calibration frame before it is read: "ref_profile" is the brightness of the
+# staff column over "ref_rows" (the dry upper staff, numerals 6 through 3) in
+# the calibration frame, and the frame's own column is slid up and down to
+# find the shift that best matches it. The calibration rows are moved by that
+# shift. A frame whose best match correlates below "min_corr" is not the
+# calibrated view (glare washing out the staff, camera knocked, lens blocked)
+# and is not read.
+#
+# Rows and columns scale with frame size, so the 1920x1440 HD uploads work
 # unchanged. Override with CALIBRATION_JSON in the environment.
 
 DEFAULT_CALIBRATION = {
@@ -490,6 +514,19 @@ DEFAULT_CALIBRATION = {
         "staff_top_y": 232,
         "scan_bottom_y": 430,
         "marks": {"6": 246.0, "5": 264.5, "4": 283.0, "3": 301.5, "2": 320.0, "1": 338.5},
+        # Grey-level mean of columns 351-357, rows 228-311, in the calibration
+        # frame. The frame is registered to this before it is read.
+        "ref_x": [351, 358],
+        "ref_rows": [228, 312],
+        "ref_profile": [
+            64, 100, 104, 163, 137, 140, 141, 165, 154, 139, 112, 144, 179, 152,
+            198, 137, 211, 187, 151, 187, 182, 221, 150, 163, 154, 158, 147, 176,
+            182, 183, 218, 210, 207, 188, 228, 223, 195, 224, 222, 242, 176, 187,
+            169, 191, 184, 168, 167, 180, 216, 197, 195, 200, 222, 234, 211, 187,
+            195, 243, 198, 200, 209, 213, 214, 210, 218, 192, 211, 221, 239, 229,
+            241, 242, 234, 239, 241, 243, 227, 223, 226, 227, 225, 220, 217, 221,
+        ],
+        "min_corr": 0.80,
     },
 }
 
@@ -504,15 +541,17 @@ def load_calibration():
         return DEFAULT_CALIBRATION
 
 CALIBRATION = load_calibration()
-CAL_MATCH_TOL_FT = float(os.environ.get("CAL_MATCH_TOL_FT", "0.3"))
-CAL_SCALE_TOL = float(os.environ.get("CAL_SCALE_TOL", "0.2"))
+
+# How far (in calibration-frame rows) the staff may have shifted and still be found.
+REGISTER_SLACK = int(os.environ.get("REGISTER_SLACK", "12"))
 
 
 def calibration_for(camera, frame_size):
     """
     Calibration for this camera scaled to this frame, or None. Returns a dict
     with the fitted (a, b) such that frame_y = a + b*value, plus the scaled
-    staff column and scan rows.
+    staff column and scan rows. Rows are for the calibration frame's view;
+    apply register_frame() and shift_calibration() before reading a frame.
     """
     cal = CALIBRATION.get(camera) if camera else None
     if not cal or not cal.get("marks"):
@@ -533,12 +572,18 @@ def calibration_for(camera, frame_size):
 
     sx = cal.get("staff_x")
     return {
-        "a": a, "b": b, "px_per_ft": -b, "ky": ky,
+        "a": a, "b": b, "px_per_ft": -b, "ky": ky, "kx": kx,
         "staff_x": (round(sx[0] * kx), round(sx[1] * kx)) if sx else None,
         "staff_top_y": round(cal["staff_top_y"] * ky) if cal.get("staff_top_y") is not None else None,
         "scan_bottom_y": round(cal["scan_bottom_y"] * ky) if cal.get("scan_bottom_y") is not None else None,
         "lowest_mark": min(v for v, _ in pts),
         "highest_mark": max(v for v, _ in pts),
+        "ref_profile": cal.get("ref_profile"),
+        "ref_x": cal.get("ref_x"),
+        "ref_rows": cal.get("ref_rows"),
+        "min_corr": float(cal.get("min_corr", 0.0)),
+        "shift": 0.0,
+        "corr": None,
     }
 
 
@@ -546,33 +591,162 @@ def level_at(cal, frame_y):
     return (float(frame_y) - cal["a"]) / cal["b"]
 
 
-def detect_waterline(image_bytes, cal):
+def register_frame(image_bytes, cal):
     """
-    Find the waterline from the pixels in the staff's column.
+    Vertical offset of this frame's staff from the calibration frame, in
+    frame pixels, and the correlation of the match (None when the calibration
+    carries no reference profile).
 
-    Whiteness per row = brightness minus saturation, averaged across the
-    column. The dry staff scores high, water and the staff's reflection score
-    much lower. The waterline is the row where the mean whiteness of the ten
-    rows above exceeds the mean of the eight rows below by the most: a
-    one-way step. A dark numeral or hashmark dips and recovers, so it scores
-    poorly; the reflection is dimmer than the staff, so its lower edge scores
-    less than the surface does. The step must clear 30% of the profile's
-    range, or the result is rejected (glare on the water, staff missing).
+    The reference is the grey-level profile of the staff column over the dry
+    upper staff. The frame's column is sampled at calibration-row spacing
+    (so HD frames compare like for like), slid up to REGISTER_SLACK rows
+    either way, and the shift with the highest normalised correlation wins.
+    Glare on the wall drops the correlation to ~0.75; a normal frame scores
+    0.87-0.99.
+    """
+    from io import BytesIO
+    from PIL import Image
 
-    Verified 2026-09-02 on a native copy of the 11:53 frame: 0.92 ft, stable
-    at 1280x960, at JPEG q55, at 0.45x and 1.4x brightness; tracks water
-    painted onto the real staff at 1.5/2.5/4.0/5.3 ft within 0.07; rejects
-    the frame when the staff is painted out, the view is shifted 15 px, or
-    the water is as bright as the staff.
+    ref = cal.get("ref_profile")
+    if not ref or not cal.get("ref_x") or not cal.get("ref_rows"):
+        return 0.0, None
+    img = Image.open(BytesIO(image_bytes)).convert("L")
+    p = img.load()
+    W, H = img.size
+    kx, ky = cal["kx"], cal["ky"]
+    rx0, rx1 = (round(v * kx) for v in cal["ref_x"])
+    ry0, ry1 = cal["ref_rows"]
+    n = len(ref)
+    slack = REGISTER_SLACK
 
-    Returns (frame_y, detail, quality) or (None, reason, 0.0), where quality
-    is the step as a fraction of the profile's range (0.30 is the floor).
+    def column(y):
+        return sum(p[x, y] for x in range(rx0, rx1)) / float(rx1 - rx0)
+
+    prof = []
+    for j in range(-slack, (ry1 - ry0) + slack):
+        y = round((ry0 + j) * ky)
+        prof.append(column(y) if 0 <= y < H else None)
+
+    ma = sum(ref) / n
+    va = sum((a - ma) ** 2 for a in ref) ** 0.5 or 1.0
+    best = (-2.0, 0)
+    for s in range(-slack, slack + 1):
+        seg = prof[slack + s: slack + s + n]
+        if len(seg) < n or any(v is None for v in seg):
+            continue
+        mb = sum(seg) / n
+        vb = sum((b - mb) ** 2 for b in seg) ** 0.5 or 1.0
+        c = sum((a - ma) * (b - mb) for a, b in zip(ref, seg)) / (va * vb)
+        if c > best[0]:
+            best = (c, s)
+    return best[1] * ky, best[0]
+
+
+def shift_calibration(cal, dy):
+    """The calibration with every row moved by dy frame pixels."""
+    out = dict(cal)
+    out["a"] = cal["a"] + dy
+    out["shift"] = dy
+    for k in ("staff_top_y", "scan_bottom_y"):
+        if cal.get(k) is not None:
+            out[k] = round(cal[k] + dy)
+    return out
+
+
+# -- Waterline from the pixels -----------------------------------------------
+#
+# Whiteness per row = brightness minus saturation. The dry staff scores high,
+# water and the staff's reflection score much lower, so the waterline is a
+# downward step in the whiteness profile of the staff's column.
+#
+# Two profiles are kept: the MEAN over the staff's columns, and the CORE, the
+# mean of the three brightest pixels in the row. They agree on a clean staff.
+# They differ when the lower staff is wet or silt-stained (seen 2026-10-27
+# through 2026-11-13, after rain and at high flow): the stain darkens most
+# of the staff's width but a white core survives, so the mean drops at the
+# top of the stain while the core only drops at the water. On 2026-11-10 the
+# mean step at the top of the stain read 2.2 ft on a day the water was near
+# 0.9, and held there for three days.
+#
+# Every downward step in either profile is a candidate. A candidate is the
+# waterline only if:
+#   * there is staff within 20 rows above it (the lower edge of the staff's
+#     reflection is a step too, but only reflection sits above it);
+#   * the rows just below it are water-dark (the top of a stain is followed
+#     by stained staff, which is dimmer than clean staff but not water);
+#   * nothing below it is ever full white for three rows running (a numeral
+#     or hashmark is dark, then the staff is white again).
+# The staff's reflection makes the profile dip at the surface and brighten
+# again a few rows down. Of the candidates that pass, the highest one that
+# is followed by that brightening wins: the top of a wet band passes the
+# tests (a dark band is as dark as water) but has stained staff under it,
+# while the surface below it has the reflection. With no confirmed
+# candidate the highest passing one is used at no better than medium
+# confidence, since dark water on an overcast day shows no reflection at
+# all. If nothing passes, the highest candidate that failed only the
+# water-dark test is used and marked as a wet band (low confidence); its
+# level is then an upper bound.
+#
+# Known limit: on an overcast day with a wet band as dark as the water
+# (2026-11-11) nothing in the pixels separates the two, and the reading is
+# the top of the wet band. The staff needs cleaning when that happens.
+#
+# Verified 2026-11-13 over 202 frames from 2026-09-01 to 2026-11-13 against
+# USGS flow at Underwood: see the notes in the commit that added this.
+
+CAND_FLOOR = float(os.environ.get("CAND_FLOOR", "0.15"))      # candidate step, fraction of range
+STAFF_ABOVE = float(os.environ.get("STAFF_ABOVE", "0.60"))    # staff within 20 rows above
+WATER_BELOW = float(os.environ.get("WATER_BELOW", "0.25"))    # rows just below are water-dark
+WHITE_BELOW = float(os.environ.get("WHITE_BELOW", "0.80"))    # no full-white run below
+REFLECT_RISE = float(os.environ.get("REFLECT_RISE", "0.10"))  # brightening under the surface
+
+
+def _whiteness(c):
+    return (c[0] + c[1] + c[2]) / 3.0 - (max(c) - min(c))
+
+
+def _smooth3(v):
+    if len(v) < 3:
+        return list(v)
+    return [v[0]] + [(v[i - 1] + v[i] + v[i + 1]) / 3.0 for i in range(1, len(v) - 1)] + [v[-1]]
+
+
+def _refs(sm):
+    srt = sorted(sm)
+    n = len(srt)
+    staff_ref = srt[int(0.9 * (n - 1))]
+    water_ref = srt[int(0.1 * (n - 1))]
+    return staff_ref, water_ref, staff_ref - water_ref
+
+
+def _step_candidates(sm, up, down, floor, nb=3):
+    steps = [(sum(sm[i - up:i]) / up - sum(sm[i + 1:i + 1 + down]) / down, i)
+             for i in range(up, len(sm) - down)]
+    out = []
+    for k, (s, i) in enumerate(steps):
+        if s < floor:
+            continue
+        if all(s >= steps[j][0] for j in range(max(0, k - nb), min(len(steps), k + nb + 1))):
+            out.append((s, i))
+    return out
+
+
+def detect_waterline(image_bytes, cal, debug=None):
+    """
+    Find the waterline from the pixels in the staff's column. See the notes
+    above. cal must already be registered to the frame.
+
+    Returns (frame_y, detail, quality, flags) or (None, reason, 0.0, {}).
+    quality is the chosen step as a fraction of the profile's range, scaled
+    down when the reflection is missing or the rows below the step look like
+    wet staff rather than water; flags carries "reflection" and "band".
+    debug, if a list, receives every judged candidate (for offline study).
     """
     from io import BytesIO
     from PIL import Image
 
     if not cal or not cal.get("staff_x") or cal.get("staff_top_y") is None:
-        return None, "no staff column in calibration", 0.0
+        return None, "no staff column in calibration", 0.0, {}
 
     img = Image.open(BytesIO(image_bytes)).convert("RGB")
     W, H = img.size
@@ -580,26 +754,25 @@ def detect_waterline(image_bytes, cal):
     y0 = max(0, cal["staff_top_y"])
     y1 = min(H, cal["scan_bottom_y"] or H)
     if x1 - x0 < 2 or y1 - y0 < 30:
-        return None, "staff column out of frame", 0.0
+        return None, "staff column out of frame", 0.0, {}
+    p = img.load()
+    ky = cal["ky"]
 
     def whiteness_rows(bx0, bx1):
-        s = img.crop((bx0, y0, bx1, y1))
-        p = s.load()
-        out = []
-        for y in range(s.height):
-            acc = 0.0
-            for x in range(s.width):
-                r, g, b = p[x, y]
-                acc += (r + g + b) / 3.0 - (max(r, g, b) - min(r, g, b))
-            out.append(acc / s.width)
-        return out
+        return [sum(_whiteness(p[x, y]) for x in range(bx0, bx1)) / float(bx1 - bx0)
+                for y in range(y0, y1)]
 
-    rows = whiteness_rows(x0, x1)
+    rows = []
+    core = []
+    for y in range(y0, y1):
+        ws = sorted((_whiteness(p[x, y]) for x in range(x0, x1)), reverse=True)
+        rows.append(sum(ws) / len(ws))
+        core.append(sum(ws[:3]) / len(ws[:3]))
 
     # The staff must stand out from the rock either side of it. If it does
     # not, the camera has moved or something is in the way, and any step we
     # find would be rock-meets-water, not staff-meets-water.
-    gap = max(3, round(4 * cal["ky"]))
+    gap = max(3, round(4 * ky))
     wide = max(6, round((x1 - x0) * 1.0))
     flank = []
     if x0 - gap - wide >= 0:
@@ -613,101 +786,110 @@ def detect_waterline(image_bytes, cal):
         col_ref = rs[int(0.9 * (len(rs) - 1))]
         if col_ref - flank_ref < 0.15 * col_ref:
             return None, (f"staff column ({col_ref:.0f}) is no whiter than the rock beside it "
-                          f"({flank_ref:.0f}) — camera moved or staff obscured"), 0.0
+                          f"({flank_ref:.0f}) — camera moved or staff obscured"), 0.0, {}
 
-    sm = [rows[0]] + [(rows[i - 1] + rows[i] + rows[i + 1]) / 3 for i in range(1, len(rows) - 1)] + [rows[-1]]
+    sm = _smooth3(rows)
+    sc = _smooth3(core)
     n = len(sm)
-    srt = sorted(sm)
-    staff_ref = srt[int(0.9 * (n - 1))]
-    water_ref = srt[int(0.1 * (n - 1))]
-    rng = staff_ref - water_ref
+    staff_ref, water_ref, rng = _refs(sm)
     if rng < 40:
         return None, (f"no contrast in staff column (staff {staff_ref:.0f}, water {water_ref:.0f}) "
-                      f"— staff not where the calibration expects it, or fully submerged"), 0.0
+                      f"— staff not where the calibration expects it, or fully submerged"), 0.0, {}
+    c_staff, c_water, c_rng = _refs(sc)
 
-    ky = cal["ky"]
     up = max(6, round(10 * ky))
     down = max(5, round(8 * ky))
-    best, best_step = None, -1e9
-    for i in range(up, n - down):
-        step = sum(sm[i - up:i]) / up - sum(sm[i + 1:i + 1 + down]) / down
-        if step > best_step:
-            best_step, best = step, i
-    if best is None or best_step < 0.30 * rng:
-        return None, (f"no clear step in profile (best {best_step:.0f} of range {rng:.0f}) "
-                      f"— glare on the water, or staff obscured"), 0.0
+    dark_n = max(4, round(6 * ky))
+    refl_n = max(8, round(20 * ky))
+    look_up = max(12, round(20 * ky))
+    white_run = max(2, round(3 * ky))
+
+    # Candidates from both profiles, merged within two rows.
+    cands = {}
+    for s, i in _step_candidates(sm, up, down, CAND_FLOOR * rng):
+        cands[i] = max(cands.get(i, 0.0), s / rng)
+    if c_rng >= 40:
+        for s, i in _step_candidates(sc, up, down, CAND_FLOOR * c_rng):
+            near = [j for j in cands if abs(j - i) <= 2]
+            if near:
+                j = near[0]
+                cands[j] = max(cands[j], s / c_rng)
+            else:
+                cands[i] = s / c_rng
+    if not cands:
+        return None, (f"no clear step in profile (range {rng:.0f}) "
+                      f"— glare on the water, or staff obscured"), 0.0, {}
+
+    white_level = water_ref + WHITE_BELOW * rng
+    judged = []
+    for i, strength in cands.items():
+        above = max(sm[max(0, i - look_up):i])
+        staff_above = above >= water_ref + STAFF_ABOVE * rng
+        dz = sm[i + 1:i + 1 + dark_n]
+        if len(dz) < 3:
+            continue
+        dark = statistics.median(dz)
+        water_below = dark <= water_ref + WATER_BELOW * rng
+        run = 0
+        white_below = False
+        for v in sm[i + 1:]:
+            run = run + 1 if v >= white_level else 0
+            if run >= white_run:
+                white_below = True
+                break
+        rz = sm[i + 1 + dark_n:i + 1 + dark_n + refl_n]
+        rise = (sum(rz) / len(rz) - dark) / rng if len(rz) >= 4 else None
+        judged.append({
+            "i": i, "strength": strength, "staff_above": staff_above,
+            "water_below": water_below, "white_below": white_below,
+            "dark": (dark - water_ref) / rng, "rise": rise,
+        })
+
+    if debug is not None:
+        debug.extend(dict(c, row=y0 + c["i"], level=level_at(cal, y0 + c["i"] + 1)) for c in judged)
+    passing = [c for c in judged if c["staff_above"] and c["water_below"] and not c["white_below"]]
+    band = False
+    if passing:
+        # The highest candidate the reflection confirms. The top of a wet
+        # band passes the tests above but has stained staff under it, not a
+        # reflection; the surface below it has both. With no confirmed
+        # candidate, the highest one (the reflection's lower edge is always
+        # lower, so it never wins by default).
+        confirmed = [c for c in passing if c["rise"] is not None and c["rise"] >= REFLECT_RISE]
+        best = min(confirmed or passing, key=lambda c: c["i"])
+    else:
+        fallback = [c for c in judged if c["staff_above"] and not c["white_below"]]
+        if not fallback:
+            return None, (f"no step looks like a surface ({len(judged)} candidates)"), 0.0, {}
+        best = min(fallback, key=lambda c: c["i"])
+        band = True
+
+    i = best["i"]
+    reflection = best["rise"] is not None and best["rise"] >= REFLECT_RISE
 
     # Refine to the steepest local drop. If a hashmark sits just above the
     # surface both edges are steep; take the LOWER one that is at least 60%
     # as steep as the steepest, since the surface is below the mark.
     w = max(2, round(4 * ky))
-    lo, hi = max(1, best - w), min(n - 3, best + w + 2)
-    drops = [(rows[i - 1] - rows[i + 2], i) for i in range(lo, hi)]
+    lo, hi = max(1, i - w), min(n - 3, i + w + 2)
+    drops = [(rows[j - 1] - rows[j + 2], j) for j in range(lo, hi)]
     max_drop = max(d for d, _ in drops)
-    ref = max(i for d, i in drops if d >= 0.6 * max_drop)
+    ref = max(j for d, j in drops if d >= 0.6 * max_drop)
     frame_y = y0 + ref + 1.0
-    return frame_y, (f"whiteness staff {staff_ref:.0f} / water {water_ref:.0f}, "
-                     f"step {best_step:.0f} at row {frame_y:.0f}"), best_step / rng
 
-
-def check_against_calibration(marks, cal, to_frame):
-    """
-    Compare the model's reported marks with the calibration.
-
-    Returns (status, detail). status is "agree" when the model's rows land on
-    calibration rows with consistent labels, "label_shift" when they land on
-    calibration rows but every label is off by the same whole number, or
-    "mismatch" when the rows do not fit the calibration grid at all — the
-    signal that the camera has moved. "no_marks" when there is nothing to
-    compare.
-    """
-    a, b = cal["a"], cal["b"]
-    rows = []
-    for m in marks or []:
-        try:
-            rows.append((int(float(m["value"])), to_frame(float(m["y"]))))
-        except (KeyError, TypeError, ValueError):
-            continue
-    if not rows:
-        return "no_marks", "model reported no marks"
-
-    px_per_ft = -b
-    offsets = []
-    for v, y in rows:
-        implied = (y - a) / b
-        nearest = round(implied)
-        if abs(implied - nearest) > CAL_MATCH_TOL_FT:
-            return "mismatch", (f"model mark {v} at frame y={y:.0f} sits {implied:.2f} on the "
-                                f"calibration grid, not on a mark")
-        offsets.append(nearest - v)
-
-    if len(rows) >= 2:
-        rs = sorted(rows, key=lambda r: -r[0])
-        local = [(rs[i + 1][1] - rs[i][1]) / (rs[i][0] - rs[i + 1][0]) for i in range(len(rs) - 1)]
-        mean_local = sum(local) / len(local)
-        if abs(mean_local - px_per_ft) > CAL_SCALE_TOL * px_per_ft:
-            return "mismatch", (f"model spacing {mean_local:.1f} px/ft vs calibration "
-                                f"{px_per_ft:.1f} px/ft")
-
-    if len(set(offsets)) > 1:
-        return "mismatch", f"inconsistent label offsets {offsets}"
-    off = offsets[0]
-    if off == 0:
-        return "agree", f"{len(rows)} marks on grid, labels agree"
-    return "label_shift", f"{len(rows)} marks on grid, model labels off by {-off:+d}"
-
-
-def staff_box_from_calibration(cal, frame_size):
-    """A deterministic crop around the calibrated staff column, no locate pass."""
-    if not cal or not cal.get("staff_x"):
-        return None
-    W, H = frame_size
-    x0, x1 = cal["staff_x"]
-    cx = (x0 + x1) / 2
-    half_w = max(30, (x1 - x0) * 3)
-    top = cal["staff_top_y"] - 15 * cal["ky"]
-    bottom = (cal["scan_bottom_y"] or H)
-    return (max(0, cx - half_w), max(0, top), min(W, cx + half_w), min(H, bottom))
+    quality = best["strength"]
+    tags = []
+    if reflection:
+        tags.append("reflection below")
+    else:
+        quality *= 0.6
+        tags.append("no reflection below")
+    if band:
+        quality *= 0.5
+        tags.append("rows below are wet staff, not water — reading is an upper bound")
+    detail = (f"whiteness staff {staff_ref:.0f} / water {water_ref:.0f}, step {best['strength']:.2f} "
+              f"of range at row {frame_y:.0f}; {'; '.join(tags)}")
+    return frame_y, detail, quality, {"reflection": reflection, "band": band}
 
 
 def read_one(image_bytes, camera=None):
@@ -715,77 +897,82 @@ def read_one(image_bytes, camera=None):
     Read one photo. Returns a dict with the chosen level, how it was chosen,
     and everything that went into it, so a bad day is diagnosable.
 
-    Calibrated camera: the waterline comes from the pixel profile and the
-    level from the calibration. That is the answer; the model is not asked.
-    Confidence comes from how clean the step is. The model is consulted only
-    when the pixel path cannot read the frame (staff obscured, glare, camera
-    moved), and then its waterline is converted with the calibration if its
-    marks fit the grid, or its own geometry is used if they do not.
-
-    On 2026-09-02 the model's mark coordinates on this camera were off by a
-    constant ~1.45x on every frame, which made them useless as a camera-moved
-    check — they vetoed four correct pixel readings (1.03/0.91/0.97/0.97).
-    The pixel path carries its own camera-moved check (the staff column must
-    stand out from the rock beside it), so the model no longer gets a veto.
+    Calibrated camera: the frame is registered to the calibration frame, the
+    waterline comes from the pixel profile and the level from the
+    calibration. That is the answer; the model is not asked. A frame that
+    does not match the calibrated view, or whose column has no readable
+    step, raises ValueError and is skipped by read_consensus. It is not
+    handed to the model: on this camera the model's readings have been off
+    by a foot or more either way (5.25, 0.25 and -1.35 ft on the primary
+    camera in early November 2026), and a wrong number at low confidence
+    still moves the weighted median.
 
     Uncalibrated camera: locate + read + geometry, as before.
     """
     frame = image_size(image_bytes)
     cal = calibration_for(camera, frame)
 
-    floor = (cal["lowest_mark"] - 1.0) if cal else 0.0
-    ceiling = (cal["highest_mark"] + 0.5) if cal else 6.5
-
     # ---- pixel path (calibrated cameras) ----
     if cal is not None:
-        try:
-            px_y, px_detail, px_q = detect_waterline(image_bytes, cal)
-        except Exception as e:
-            px_y, px_detail, px_q = None, f"pixel waterline failed: {e}", 0.0
-        if px_y is not None:
-            px_level = level_at(cal, px_y)
-            if floor <= px_level <= ceiling:
-                conf = "high" if px_q >= 0.42 else "medium"
-                return {
-                    "level": round(max(px_level, 0.0), 2),
-                    "method": "pixels",
-                    "confidence": conf,
-                    "notes": f"waterline from the pixel profile at row {px_y:.0f} ({px_detail})",
-                    "pixel_level": round(px_level, 2),
-                    "pixel_waterline_y": round(px_y, 1),
-                    "pixel_detail": px_detail,
-                    "pixel_quality": round(px_q, 2),
-                    "frame": list(frame),
-                }
-            px_detail = f"pixel level {px_level:.2f} outside {floor:.1f}..{ceiling:.1f} — {px_detail}"
-        log.info("    pixel waterline unavailable: %s — asking the model", px_detail)
-    else:
-        px_y = px_detail = None
-        px_q = 0.0
+        dy, corr = register_frame(image_bytes, cal)
+        if corr is not None:
+            if corr < cal["min_corr"]:
+                raise ValueError(f"frame does not match the calibrated view "
+                                 f"(correlation {corr:.2f} at shift {dy:+.0f} px)")
+            log.info("    registered: shift %+.0f px, correlation %.2f", dy, corr)
+        cal = shift_calibration(cal, dy)
 
-    # ---- model path ----
+        floor = cal["lowest_mark"] - 1.0
+        ceiling = cal["highest_mark"] + 0.5
+        px_y, px_detail, px_q, flags = detect_waterline(image_bytes, cal)
+        if px_y is None:
+            raise ValueError(f"pixel waterline unavailable: {px_detail}")
+        px_level = level_at(cal, px_y)
+        if not (floor <= px_level <= ceiling):
+            raise ValueError(f"pixel level {px_level:.2f} outside {floor:.1f}..{ceiling:.1f} "
+                             f"— {px_detail}")
+
+        if flags.get("band"):
+            conf = "low"
+        elif px_q >= 0.42 and flags.get("reflection") and (corr is None or corr >= 0.88):
+            conf = "high"
+        elif px_q >= 0.20:
+            conf = "medium"
+        else:
+            conf = "low"
+        return {
+            "level": round(max(px_level, 0.0), 2),
+            "method": "pixels",
+            "confidence": conf,
+            "notes": f"waterline from the pixel profile at row {px_y:.0f} ({px_detail})",
+            "pixel_level": round(px_level, 2),
+            "pixel_waterline_y": round(px_y, 1),
+            "pixel_detail": px_detail,
+            "pixel_quality": round(px_q, 2),
+            "reflection": bool(flags.get("reflection")),
+            "wet_band": bool(flags.get("band")),
+            "registration_shift": round(dy, 1),
+            "registration_corr": round(corr, 3) if corr is not None else None,
+            "frame": list(frame),
+        }
+
+    # ---- model path (uncalibrated cameras) ----
     box = None
-    if cal is not None:
-        box = staff_box_from_calibration(cal, frame)
-    else:
-        try:
-            box = locate_staff(image_bytes)
-        except Exception as e:
-            log.warning("    locate pass failed (%s) — reading the full frame", e)
+    try:
+        box = locate_staff(image_bytes)
+    except Exception as e:
+        log.warning("    locate pass failed (%s) — reading the full frame", e)
 
     crop_bytes, w, h, scale, origin, frame = crop_and_enlarge(image_bytes, box)
     system = READ_PROMPT_TEMPLATE.format(w=w, h=h)
     result = _ask(system, READ_USER_PROMPT, crop_bytes)
 
-    if box is not None and not result.get("marks") and cal is None:
+    if box is not None and not result.get("marks"):
         log.info("    crop showed no marks — retrying on the full frame")
         box = None
         crop_bytes, w, h, scale, origin, frame = crop_and_enlarge(image_bytes, None)
         system = READ_PROMPT_TEMPLATE.format(w=w, h=h)
         result = _ask(system, READ_USER_PROMPT, crop_bytes)
-
-    def to_frame(y):
-        return origin[1] + float(y) / scale
 
     model_level = result.get("level")
     try:
@@ -804,31 +991,8 @@ def read_one(image_bytes, camera=None):
     except (ValueError, KeyError, TypeError):
         pass
 
-    model_wl_y = model_cal_level = None
-    cal_status = cal_detail = None
-    if cal is not None:
-        cal_status, cal_detail = check_against_calibration(result.get("marks"), cal, to_frame)
-        if result.get("waterline_y") is not None:
-            try:
-                model_wl_y = to_frame(result["waterline_y"])
-                model_cal_level = level_at(cal, model_wl_y)
-            except (TypeError, ValueError):
-                pass
-
-    if model_cal_level is not None and cal_status in ("agree", "label_shift") \
-            and floor <= model_cal_level <= ceiling:
-        level, method = model_cal_level, "calibration"
-        conf = "medium" if conf == "high" else conf
-        if cal_status == "label_shift":
-            log.info("    %s — calibration says %.2f, model's own labels gave %s",
-                     cal_detail, model_cal_level,
-                     f"{geom_level:.2f}" if geom_level is not None else "nothing")
-    elif geom_level is not None and 0.0 <= geom_level <= 6.5:
+    if geom_level is not None and 0.0 <= geom_level <= 6.5:
         level, method = geom_level, "geometry"
-        if cal is not None:
-            log.warning("    pixels and calibration both unusable (%s / %s) — model geometry, "
-                        "low confidence", px_detail, cal_detail)
-            conf = "low"
         if n_marks < 3:
             conf = "low"
         if lowest_mark is not None and lowest_mark - geom_level > 1.6:
@@ -846,14 +1010,7 @@ def read_one(image_bytes, camera=None):
         "method": method,
         "confidence": conf,
         "notes": result.get("notes", ""),
-        "pixel_level": None,
-        "pixel_waterline_y": None,
-        "pixel_detail": px_detail,
-        "pixel_quality": 0.0,
         "model_level": model_level,
-        "model_waterline_y": round(model_wl_y, 1) if model_wl_y is not None else None,
-        "calibration_level": round(model_cal_level, 2) if model_cal_level is not None else None,
-        "calibration_check": cal_detail,
         "geometry_level": round(geom_level, 2) if geom_level is not None else None,
         "px_per_ft": round(px_per_ft, 1) if px_per_ft else None,
         "geometry_note": reason,
@@ -882,6 +1039,15 @@ def confidence_from_spread(spread, n):
 
 
 MIN_KEPT = int(os.environ.get("MIN_KEPT", "2"))
+
+# A day-to-day change bigger than JUMP_FT while USGS flow changed by less
+# than JUMP_FLOW_FRACTION is published at low confidence (see main()).
+JUMP_FT = float(os.environ.get("JUMP_FT", "0.5"))
+# Bumped when readings stop being comparable with the previous run's (a
+# new detector, a new calibration). The jump check only compares like with
+# like; the first run after a bump is never flagged against the old reader.
+READER_VERSION = 2
+JUMP_FLOW_FRACTION = float(os.environ.get("JUMP_FLOW_FRACTION", "0.25"))
 
 # The staff is watched by two cameras. 865509053179515 is the close one and
 # agrees with ground truth; 016578000423746 has read about half a foot high on
@@ -1159,8 +1325,39 @@ def main():
         "photo_timestamp": photo_ts.strftime("%b %d, %Y at %-I:%M %p") if photo_ts else None,
         "read_at": now_pacific.strftime("%b %d, %Y at %-I:%M %p PT"),
         "read_at_iso": now_pacific.isoformat(),
+        "reader_version": READER_VERSION,
     }
     payload.update(fetch_usgs())
+
+    # A real jump at Husum shows up at Underwood too. A big change in the
+    # staff reading while the USGS flow barely moved is the signature of a
+    # wet band on the staff being read as the waterline (2026-11-10), so it
+    # is published at low confidence rather than as fact. The comparison is
+    # against the last reading that was not itself low confidence (the
+    # "baseline"), so a band that lasts several days stays flagged until
+    # the flow agrees with the staff again.
+    base_level = previous.get("baseline_level", prev_level)
+    base_cfs = previous.get("baseline_cfs", previous.get("usgs_cfs"))
+    cfs = payload.get("usgs_cfs")
+    comparable = previous.get("reader_version") == READER_VERSION
+    if comparable and base_level is not None and base_cfs and cfs:
+        jump = payload["level"] - base_level
+        flow_change = cfs / base_cfs - 1.0
+        if abs(jump) > JUMP_FT and abs(flow_change) < JUMP_FLOW_FRACTION:
+            log.warning("Level moved %+.2f ft from the %.1f ft baseline while USGS flow moved "
+                        "%+.0f%% — publishing at low confidence.", jump, base_level, flow_change * 100)
+            payload["confidence"] = "low"
+            payload["notes"] = (f"{payload['notes']} | level moved {jump:+.2f} ft from {base_level:.1f} "
+                                f"while USGS flow moved {flow_change:+.0%}; a wet band on the staff "
+                                f"may be reading as the waterline")
+    if payload["confidence"] in ("high", "medium") and cfs:
+        payload["baseline_level"] = payload["level"]
+        payload["baseline_cfs"] = cfs
+        payload["baseline_read_at_iso"] = payload["read_at_iso"]
+    else:
+        for k in ("baseline_level", "baseline_cfs", "baseline_read_at_iso"):
+            if previous.get(k) is not None:
+                payload[k] = previous[k]
 
     if DRY_RUN:
         log.info("DRY_RUN — would have written husumGauge.json and appended history.")
