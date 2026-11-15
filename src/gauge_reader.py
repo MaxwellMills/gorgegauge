@@ -43,6 +43,31 @@ near 0.9:
   * A calibrated camera's frame that the pixel path cannot read is skipped;
     it is no longer handed to the model, whose readings on this camera were
     off by a foot or more in either direction.
+
+Revised 2026-11-14, the day the Truss camera (016578004123334) went in:
+
+  * The window is per camera. It used to be the IMAGE_COUNT newest exposures
+    over all cameras; the Truss fires twice an hour, so those were always
+    its frames and the old camera stopped being read the day it was installed.
+
+  * Only calibrated cameras can reach the published number. The old fallback
+    counted every camera when the primary had too few frames, which put five
+    model-read Truss frames (0.05 to 1.7 ft, two of them setup shots of a
+    ceiling and a mis-aimed wall) behind a 1.2 ft reading on a river at 0.9.
+
+  * The Truss has a calibration (see DEFAULT_CALIBRATION) taken from two
+    fixed references rather than the numerals, which it cannot resolve.
+
+  * The foot rows of both cameras were moved 0.25 ft down. The 2026-09-02
+    rows were the centres of the painted numerals; the foot line is at the
+    bottom of each numeral. Readings from 2026-09-03 to 2026-11-14 are about
+    0.25 ft low. READER_VERSION went to 3 so the jump check does not compare
+    across the change.
+
+  * A close-up of the staff is published next to the JSON: the frame the
+    number came from, enlarged, with the calibrated foot marks and the
+    detected waterline drawn on. Readers can check the number against the
+    picture without reading paint the camera cannot show them.
 """
 
 import os
@@ -51,7 +76,7 @@ import json
 import base64
 import logging
 import statistics
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import quote
 
 import boto3
@@ -70,8 +95,9 @@ OUTPUT_BUCKET  = os.environ.get("OUTPUT_BUCKET",  "gorgegauge.com")
 OUTPUT_KEY     = os.environ.get("OUTPUT_KEY",     "husumGauge.json")
 HISTORY_KEY    = os.environ.get("HISTORY_KEY",    "husumGaugeHistory.json")
 
-IMAGE_COUNT    = int(os.environ.get("IMAGE_COUNT", "5"))
+IMAGE_COUNT    = int(os.environ.get("IMAGE_COUNT", "5"))      # per camera
 MIN_IMAGES     = int(os.environ.get("MIN_IMAGES", "2"))
+STALE_CAMERA_DAYS = int(os.environ.get("STALE_CAMERA_DAYS", "7"))
 HISTORY_MAX    = int(os.environ.get("HISTORY_MAX", "730"))
 
 # Independent cross-check: USGS White Salmon River nr Underwood, WA.
@@ -173,12 +199,18 @@ def dedupe_exposures(dated):
 
 def select_window(keys, prev_stamp, n):
     """
-    Photos to read this run, newest first.
+    Photos to read this run, newest first: up to n from each camera.
 
     Only photos newer than the previous run's newest photo are used, so two
     consecutive runs never share an input image. prev_stamp is the raw
     MMDDYYYYHHMMSS string carried forward in husumGauge.json, which sidesteps
     any timezone comparison between camera time and run time.
+
+    The cap is per camera. Until 2026-11-14 it was the n newest exposures
+    over all cameras, and a camera that fires twice an hour (the Truss)
+    filled it every day, so the primary camera was never read again. A
+    camera with nothing new is left out rather than topped up: a dead
+    camera should not keep voting with yesterday's frames.
     """
     dated = [(k, parse_timestamp(k)) for k in keys]
     dated = [(k, t) for k, t in dated if t]
@@ -192,26 +224,41 @@ def select_window(keys, prev_stamp, n):
         try:
             cutoff = datetime.strptime(prev_stamp, STAMP_FMT)
         except (ValueError, TypeError):
-            log.warning("Unparseable previous stamp %r — falling back to newest %d.",
+            log.warning("Unparseable previous stamp %r — falling back to newest %d per camera.",
                         prev_stamp, n)
 
-    if cutoff is None:
-        return dated[:n]
+    by_camera = {}
+    for k, t in dated:
+        by_camera.setdefault(camera_id(k), []).append((k, t))
 
-    fresh = [(k, t) for k, t in dated if t > cutoff]
+    # A camera that has not uploaded in a week is gone (retired, dead, or
+    # moved); without a cutoff it would otherwise contribute its last n frames
+    # from months ago and cost model calls to read them.
+    stale_before = dated[0][1] - timedelta(days=STALE_CAMERA_DAYS)
 
-    if len(fresh) >= MIN_IMAGES:
-        return fresh[:n]
+    window = []
+    for cam, frames in sorted(by_camera.items()):
+        if frames[0][1] < stale_before:
+            log.info("Camera %s: newest frame %s is over %d days older than the newest upload — ignoring it.",
+                     cam, frames[0][1], STALE_CAMERA_DAYS)
+            continue
+        if cutoff is None:
+            window += frames[:n]
+            continue
+        fresh = [(k, t) for k, t in frames if t > cutoff]
+        if not fresh:
+            continue
+        if len(fresh) < MIN_IMAGES:
+            # One new photo on its own is a thin sample. Top up to MIN_IMAGES
+            # with this camera's newest already-seen photos, and say so.
+            older = [(k, t) for k, t in frames if t <= cutoff][:MIN_IMAGES - len(fresh)]
+            log.warning("Camera %s: only %d new photo(s) since %s — topping up with %d "
+                        "already-read one(s).", cam, len(fresh), prev_stamp, len(older))
+            fresh += older
+        window += fresh[:n]
 
-    if not fresh:
-        return []
-
-    # One new photo on its own is a thin sample. Top up to MIN_IMAGES with the
-    # newest already-seen photos, and say so in the log.
-    older = [(k, t) for k, t in dated if t <= cutoff][:MIN_IMAGES - len(fresh)]
-    log.warning("Only %d new photo(s) since %s — topping up with %d already-read one(s).",
-                len(fresh), prev_stamp, len(older))
-    return (fresh + older)[:n]
+    window.sort(key=lambda x: x[1], reverse=True)
+    return window
 
 
 def fetch_image_bytes(key):
@@ -493,6 +540,14 @@ def level_from_geometry(marks, waterline_y):
 # ±0.15 ft. To refine: stand at the river, read the staff by eye at the
 # moment a photo fires, and shift "marks" so the reading matches.
 #
+# CORRECTED 2026-11-14. Those rows were the centres of the painted numerals.
+# The foot mark on this staff is the line at the BOTTOM of each numeral, and
+# on the 1920x1440 HD frames of 2026-09-02 and 2026-10-31 it sits a median
+# 0.25 ft below the old rows (5 numerals x 2 frames, spread 0.07..0.38).
+# With the rows moved down 0.25 ft the top of the board lands at 7.01 ft,
+# which is where a 7 ft board's top should be. Every reading published
+# between 2026-09-03 and 2026-11-14 is therefore about 0.25 ft LOW.
+#
 # REGISTRATION (added 2026-11-13). Between 2026-09-15 and 2026-10-03 the
 # camera's view moved up by 7 rows and stayed there, which put every reading
 # about 0.4 ft high for six weeks. Each frame is now registered against the
@@ -513,7 +568,9 @@ DEFAULT_CALIBRATION = {
         "staff_x": [349, 358],
         "staff_top_y": 232,
         "scan_bottom_y": 430,
-        "marks": {"6": 246.0, "5": 264.5, "4": 283.0, "3": 301.5, "2": 320.0, "1": 338.5},
+        # 2026-09-02 numeral centres 246.0 .. 338.5, moved down 4.6 px
+        # (0.25 ft at 18.5 px/ft) to the foot line under each numeral.
+        "marks": {"6": 250.6, "5": 269.1, "4": 287.6, "3": 306.1, "2": 324.6, "1": 343.1},
         # Grey-level mean of columns 351-357, rows 228-311, in the calibration
         # frame. The frame is registered to this before it is read.
         "ref_x": [351, 358],
@@ -525,6 +582,38 @@ DEFAULT_CALIBRATION = {
             169, 191, 184, 168, 167, 180, 216, 197, 195, 200, 222, 234, 211, 187,
             195, 243, 198, 200, 209, 213, 214, 210, 218, 192, 211, 221, 239, 229,
             241, 242, 234, 239, 241, 243, 227, 223, 226, 227, 225, 220, 217, 221,
+        ],
+        "min_corr": 0.80,
+    },
+    # The Truss camera, installed 2026-11-14. It transmits 1280x720 (about
+    # 25.6 px per foot of staff) at JPEG quality ~54; its "HD" request is a
+    # 3840x2160 upscale at quality ~15 and the rows below scale to it. The
+    # numerals are not resolvable at either size, so the marks come from two
+    # fixed references tied to the old camera's calibration on the same day:
+    # the top of the staff board (row 223 here, 7.01 ft) and the centre of
+    # the white stripe painted across the rock (row 313 here, 3.49 ft), so
+    # 25.6 px/ft. With those, the same detector read within 0.1 ft of the old
+    # camera on five clean frames (the other three sat on the top of the wet
+    # band, as the old camera also does). Calibration frame:
+    # 016578004123334-100-4-11142026130143-SYFW00141.jpg. Frames from before
+    # the final aim that day (setup shots) correlate below 0.66. The rows
+    # carry the same 0.25 ft correction as the old camera's (see above).
+    "016578004123334": {
+        "frame": [1280, 720],
+        "staff_x": [544, 552],
+        "staff_top_y": 223,
+        "scan_bottom_y": 420,
+        "marks": {"6": 248.9, "5": 274.5, "4": 300.1, "3": 325.7, "2": 351.3, "1": 376.9},
+        "ref_x": [545, 552],
+        "ref_rows": [219, 305],
+        "ref_profile": [
+            111, 125, 118, 115, 140, 188, 153, 155, 148, 145, 153, 144, 152, 154,
+            157, 159, 167, 193, 222, 237, 237, 188, 224, 241, 240, 237, 241, 238,
+            226, 246, 235, 142, 173, 183, 173, 164, 167, 194, 199, 196, 189, 196,
+            221, 242, 251, 243, 227, 236, 250, 244, 243, 251, 250, 242, 253, 229,
+            185, 190, 199, 190, 191, 198, 189, 174, 172, 188, 205, 217, 226, 220,
+            220, 219, 227, 245, 248, 228, 203, 213, 207, 244, 246, 209, 216, 226,
+            229, 226,
         ],
         "min_corr": 0.80,
     },
@@ -1046,7 +1135,8 @@ JUMP_FT = float(os.environ.get("JUMP_FT", "0.5"))
 # Bumped when readings stop being comparable with the previous run's (a
 # new detector, a new calibration). The jump check only compares like with
 # like; the first run after a bump is never flagged against the old reader.
-READER_VERSION = 2
+# 3: 2026-11-14, foot rows moved 0.25 ft down to the line under each numeral.
+READER_VERSION = 3
 JUMP_FLOW_FRACTION = float(os.environ.get("JUMP_FLOW_FRACTION", "0.25"))
 
 # The staff is watched by two cameras. 865509053179515 is the close one and
@@ -1103,6 +1193,7 @@ def read_consensus(image_list):
             r = read_one(fetch_image_bytes(key), camera_id(key))
             sample = {
                 "file": filename,
+                "key": key,
                 "camera": camera_id(key),
                 "taken": ts.isoformat() if ts else None,
             }
@@ -1125,18 +1216,26 @@ def read_consensus(image_list):
                  {c: round(statistics.median(x["level"] for x in v), 2)
                   for c, v in by_camera.items()})
 
+    # Only calibrated cameras (method "pixels") can reach the published
+    # number. An uncalibrated camera is read by the model and recorded so a
+    # bad day is diagnosable, but its readings are not comparable: five of
+    # them put 1.2 ft on the page the day the Truss went in, on a river at 0.9.
     primary = [smp for smp in samples if smp["camera"] == PRIMARY_CAMERA]
+    calibrated = [smp for smp in samples if smp["method"] == "pixels"]
     used_primary = len(primary) >= MIN_KEPT
     if used_primary:
         counted = primary
-    elif primary:
-        counted = samples
-        log.warning("Only %d usable frame(s) from primary camera %s — counting all cameras.",
-                    len(primary), PRIMARY_CAMERA)
+        counted_camera = PRIMARY_CAMERA
+    elif calibrated:
+        counted = calibrated
+        counted_camera = ",".join(sorted({smp["camera"] for smp in calibrated}))
+        log.warning("Only %d usable frame(s) from primary camera %s — counting %d frame(s) "
+                    "from calibrated camera(s) %s.", len(primary), PRIMARY_CAMERA,
+                    len(calibrated), counted_camera)
     else:
-        counted = samples
-        log.warning("No usable frames from primary camera %s — counting all cameras.",
-                    PRIMARY_CAMERA)
+        raise RuntimeError(
+            f"no usable frames from a calibrated camera "
+            f"({len(samples)} model-read frame(s) from other cameras are not published)")
 
     counted = sorted(counted, key=lambda x: x["level"])
     weighted = [(x["level"], CONF_WEIGHT.get(x["confidence"], 1)) for x in counted]
@@ -1152,7 +1251,7 @@ def read_consensus(image_list):
 
     log.info("Counted %d/%d (%s): %s -> weighted median %.1f ft (spread %.2f over %d)",
              len(counted), len(samples),
-             "primary" if used_primary else "all cameras",
+             "primary" if used_primary else f"calibrated: {counted_camera}",
              [(x["level"], x["confidence"][0]) for x in counted], median, spread, len(basis))
 
     return {
@@ -1160,12 +1259,15 @@ def read_consensus(image_list):
         "readings": [x["level"] for x in counted],
         "samples": samples,
         "cameras": sorted(by_camera),
-        "counted_camera": PRIMARY_CAMERA if used_primary else "all",
+        "counted_camera": counted_camera,
         "low": round_tenth(min(levels)),
         "high": round_tenth(max(levels)),
         "spread": spread,
         "confidence": confidence_from_spread(spread, len(basis)),
         "notes": closest["notes"],
+        # The frame that best represents the published number; the close-up
+        # is drawn from it.
+        "closest": closest,
     }
 
 
@@ -1233,6 +1335,245 @@ def append_history(entry):
     log.info("Appended to s3://%s/%s (%d entries)", OUTPUT_BUCKET, HISTORY_KEY, len(history))
 
 
+# -- Staff close-up -----------------------------------------------------------
+#
+# The numerals on the staff are not legible in what the Truss camera
+# transmits, and are marginal from the old camera. The reader does not need
+# them (it has the calibration), but a person checking the number does. So
+# the frame the number came from is cut down to the staff, enlarged, and the
+# calibrated foot marks are drawn on it along with the waterline the detector
+# chose. Published beside the JSON; the page shows it next to the number.
+
+CLOSEUP_KEY = os.environ.get("CLOSEUP_KEY", "gauge/husum-closeup.jpg")
+CLOSEUP_HEIGHT = int(os.environ.get("CLOSEUP_HEIGHT", "1000"))
+CLOSEUP_LOCAL = os.environ.get("CLOSEUP_LOCAL", "husum-closeup.jpg")   # DRY_RUN output
+
+
+def level_color(level):
+    """The page's level colours (see levelColor in site/appv6.js)."""
+    if level < 2.5:
+        return (34, 197, 94)
+    if level < 4.0:
+        return (59, 130, 246)
+    if level < 6.0:
+        return (249, 115, 22)
+    return (239, 68, 68)
+
+
+def level_mood(level):
+    """The page's level words (see levelLabel in site/appv6.js)."""
+    if level < 2.5:
+        return "Chill"
+    if level < 4.0:
+        return "A Vibe"
+    if level < 6.0:
+        return "Spicy"
+    return "Wildin'"
+
+
+def render_closeup(image_bytes, cal, waterline_y, level, caption=""):
+    """
+    JPEG bytes: the staff cut out of the frame and enlarged, with a
+    tape-measure ruler down the left side drawn from the calibration (every
+    tenth of a foot, bigger at the half, a numeral above each whole-foot
+    line, exactly as the staff itself is painted), the whole-foot lines
+    carried across the photo so the ruler can be checked against the paint,
+    the water tinted blue below the waterline the reader chose, and the
+    level in a pill coloured the way the page colours it. cal must already
+    be registered to the frame.
+
+    Geometry: output row = CAP + (frame_row - top) * scale, so every line is
+    placed from the same (a, b) fit the reading itself came from.
+    """
+    import math
+    from io import BytesIO
+    from PIL import Image, ImageDraw, ImageFont, ImageOps
+
+    img = Image.open(BytesIO(image_bytes)).convert("RGB")
+    W, H = img.size
+    ky = cal["ky"]
+    x0, x1 = cal["staff_x"]
+    ppf = cal["px_per_ft"]
+
+    def row(ft):
+        return cal["a"] + cal["b"] * ft
+
+    # From just above the top of the board to 0.7 ft under the surface.
+    top = int(max(0, min(cal["staff_top_y"] - 8 * ky, row(cal["highest_mark"] + 0.85))))
+    bottom = int(min(H, max(waterline_y + 0.7 * ppf, top + 30)))
+    ch = max(bottom - top, 1)
+    cw = max(int(ch * 0.40), (x1 - x0) * 4)
+    cx = (x0 + x1) / 2.0
+    left = int(max(0, cx - cw / 2.0))
+    right = int(min(W, left + cw))
+    left = max(0, right - cw)
+
+    CAP = round(CLOSEUP_HEIGHT * 0.046)            # caption band
+    PH = CLOSEUP_HEIGHT - CAP                      # photo height
+    scale = PH / float(ch)
+    RB = round(PH * 0.115)                         # ruler bar width
+    pw = max(1, round((right - left) * scale))
+    crop = ImageOps.autocontrast(img.crop((left, top, right, bottom)), cutoff=1)
+    crop = crop.resize((pw, PH), Image.LANCZOS)
+
+    canvas = Image.new("RGB", (RB + pw, CAP + PH), (15, 23, 42))
+    canvas.paste(crop, (RB, CAP))
+    d = ImageDraw.Draw(canvas)
+
+    def font(px):
+        try:
+            return ImageFont.load_default(size=px)
+        except TypeError:                           # Pillow < 10.1
+            return ImageFont.load_default()
+
+    f_num = font(round(RB * 0.58))
+    f_big = font(round(PH * 0.05))
+    f_mid = font(round(PH * 0.026))
+    f_cap = font(round(CAP * 0.5))
+
+    def Y(frame_y):
+        return CAP + (frame_y - top) * scale
+
+    def tsize(s, fnt):
+        bx0, by0, bx1, by1 = d.textbbox((0, 0), s, font=fnt)
+        return bx1 - bx0, by1 - by0, bx0, by0
+
+    # The page's palette (site/stylesV2.css): page #0b1120, cards #0f172a,
+    # slate borders, #e5e7eb text, #9ca3af muted, level colours for accents.
+    NAVY, CARD = (11, 17, 32), (15, 23, 42)
+    TEXT, MUTED, SLATE = (229, 231, 235), (156, 163, 175), (148, 163, 184)
+    col = level_color(level)
+
+    # Ruler bar: a dark card with slate graduations and light numerals. Each
+    # numeral sits on top of its foot line, exactly as the paint on the staff
+    # does (the foot mark is at the bottom of the number).
+    d.rectangle([0, CAP, RB - 1, CAP + PH], fill=CARD)
+    d.line([(RB - 1, CAP), (RB - 1, CAP + PH)], fill=SLATE, width=1)
+    top_tenth = int(round((cal["highest_mark"] + 1.0) * 10))
+    for tenth in range(0, top_tenth + 1):
+        ft = tenth / 10.0
+        y = Y(row(ft))
+        if not (CAP <= y < CAP + PH):
+            continue
+        if tenth % 10 == 0:
+            d.line([(0, y), (RB, y)], fill=TEXT, width=3)
+            label = str(tenth // 10)
+            tw, th, ox, oy = tsize(label, f_num)
+            ty = y - th - oy - 5
+            if ty >= CAP:
+                d.text(((RB - 24 - tw) / 2 - ox, ty), label, font=f_num, fill=TEXT,
+                       stroke_width=1, stroke_fill=TEXT)
+            # the same line carried across the photo, outlined so it reads on
+            # white staff and dark rock alike
+            d.line([(RB, y), (canvas.width, y)], fill=NAVY, width=4)
+            d.line([(RB, y), (canvas.width, y)], fill=TEXT, width=2)
+        elif tenth % 5 == 0:
+            d.line([(RB - round(RB * 0.42), y), (RB, y)], fill=TEXT, width=3)
+        else:
+            d.line([(RB - round(RB * 0.2), y), (RB, y)], fill=SLATE, width=2)
+
+    # Water: tint everything below the surface, ruler included, in the page's
+    # blue, with a few waves.
+    wy = Y(waterline_y)
+    overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    od = ImageDraw.Draw(overlay)
+    od.rectangle([0, wy, canvas.width, canvas.height], fill=(59, 130, 246, 88))
+    for k in range(3):
+        yy = wy + 16 + k * 18
+        pts = [(x, yy + 4 * math.sin(x / 16.0 + k * 1.3)) for x in range(RB, canvas.width + 3, 3)]
+        od.line(pts, fill=(191, 219, 254, 120 - k * 30), width=2)
+    canvas = Image.alpha_composite(canvas.convert("RGBA"), overlay).convert("RGB")
+    d = ImageDraw.Draw(canvas)
+
+    # The waterline, in the page's colour for this level, with a pointer on the ruler.
+    d.line([(0, wy), (canvas.width, wy)], fill=NAVY, width=8)
+    d.line([(0, wy), (canvas.width, wy)], fill=col, width=4)
+    d.polygon([(RB - 2, wy), (RB - 20, wy - 11), (RB - 20, wy + 11)], fill=NAVY)
+    d.polygon([(RB - 4, wy), (RB - 17, wy - 7), (RB - 17, wy + 7)], fill=col)
+
+    # Level pill, styled like the page's badge: dark card, coloured border,
+    # the level in the level colour and the page's word for it beneath.
+    big = f"{level:.1f} ft"
+    mood = level_mood(level)
+    bw, bh, bx, by = tsize(big, f_big)
+    mw, mh, mx, my = tsize(mood, f_mid)
+    pad = round(PH * 0.014)
+    pill_w = max(bw, mw) + 2 * pad + 8
+    pill_h = bh + mh + 2 * pad + 8
+    px = canvas.width - pill_w - 10
+    py = wy - pill_h - 12
+    if py < CAP + 4:
+        py = wy + 12
+    d.rounded_rectangle([px, py, px + pill_w, py + pill_h], radius=round(pill_h * 0.3),
+                        fill=CARD, outline=col, width=2)
+    d.text((px + (pill_w - bw) / 2 - bx, py + pad - by), big, font=f_big, fill=col,
+           stroke_width=1, stroke_fill=col)
+    d.text((px + (pill_w - mw) / 2 - mx, py + pad + bh + 6 - my), mood, font=f_mid, fill=TEXT)
+
+    # Caption band: the wordmark and when the frame was taken.
+    d.rectangle([0, 0, canvas.width, CAP], fill=NAVY)
+    wm = "GORGEGAUGE"
+    ww, wh, wox, woy = tsize(wm, f_cap)
+    d.text((10 - wox, (CAP - wh) / 2 - woy), wm, font=f_cap, fill=TEXT, stroke_width=1, stroke_fill=TEXT)
+    sub = "Husum staff" + (f" · {caption}" if caption else "")
+    sw_, shh, sox, soy = tsize(sub, f_cap)
+    if 10 + ww + 24 + sw_ + 10 > canvas.width and caption:
+        sub = caption                      # not room for both; the time matters more
+        sw_, shh, sox, soy = tsize(sub, f_cap)
+    d.text((canvas.width - sw_ - 10 - sox, (CAP - shh) / 2 - soy), sub, font=f_cap, fill=MUTED)
+
+    out = BytesIO()
+    canvas.save(out, format="JPEG", quality=90)
+    return out.getvalue()
+
+
+def build_closeup(sample):
+    """
+    Close-up fields for the payload, rendered from the sample the published
+    number is closest to. Only a pixel-path sample has the registered
+    calibration and waterline this needs; anything else yields {}.
+    """
+    if not sample or sample.get("method") != "pixels" or not sample.get("key"):
+        return {}
+    try:
+        image_bytes = fetch_image_bytes(sample["key"])
+        cal = calibration_for(sample["camera"], image_size(image_bytes))
+        cal = shift_calibration(cal, float(sample.get("registration_shift") or 0.0))
+        when = ""
+        if sample.get("taken"):
+            try:
+                when = datetime.fromisoformat(sample["taken"]).strftime("%b %-d, %-I:%M %p")
+            except ValueError:
+                when = sample["taken"]
+        caption = when
+        jpeg = render_closeup(image_bytes, cal, float(sample["pixel_waterline_y"]),
+                              float(sample["level"]), caption)
+    except Exception as e:
+        log.warning("Close-up not rendered: %s", e)
+        return {}
+
+    if DRY_RUN:
+        with open(CLOSEUP_LOCAL, "wb") as f:
+            f.write(jpeg)
+        log.info("DRY_RUN — close-up written to %s", CLOSEUP_LOCAL)
+    else:
+        s3.put_object(
+            Bucket=OUTPUT_BUCKET,
+            Key=CLOSEUP_KEY,
+            Body=jpeg,
+            ContentType="image/jpeg",
+            CacheControl="no-cache, max-age=60",
+        )
+        log.info("Wrote s3://%s/%s", OUTPUT_BUCKET, CLOSEUP_KEY)
+    return {
+        "closeup_url": "/" + CLOSEUP_KEY,
+        "closeup_frame": sample["file"],
+        "closeup_camera": sample["camera"],
+        "closeup_level": sample["level"],
+        "closeup_taken": sample.get("taken"),
+    }
+
+
 # -- Output -------------------------------------------------------------------
 
 def update_preview_image(source_key):
@@ -1293,7 +1634,12 @@ def main():
     for k, ts in window:
         log.info("  %s  (%s)", k.split("/")[-1], ts)
 
-    result = read_consensus(window)
+    try:
+        result = read_consensus(window)
+    except RuntimeError as e:
+        log.warning("%s. Leaving %s unchanged so the page shows a stale read time "
+                    "rather than a number from an uncalibrated camera.", e, OUTPUT_KEY)
+        return
 
     prev_level = previous.get("level")
     if prev_level is not None:
@@ -1328,6 +1674,7 @@ def main():
         "reader_version": READER_VERSION,
     }
     payload.update(fetch_usgs())
+    payload.update(build_closeup(result.get("closest")))
 
     # A real jump at Husum shows up at Underwood too. A big change in the
     # staff reading while the USGS flow barely moved is the signature of a

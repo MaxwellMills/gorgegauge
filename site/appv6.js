@@ -202,6 +202,24 @@ async function loadGauge() {
       notesEl.textContent = parts.join(" \u00b7 ");
     }
 
+    // Staff close-up: the frame the number came from, enlarged, with the
+    // calibrated foot marks and the detected waterline drawn on it.
+    const closeupEl = document.getElementById("gaugeCloseup");
+    if (closeupEl) {
+      if (d.closeup_url) {
+        const sep = d.closeup_url.includes("?") ? "&" : "?";
+        const url = d.closeup_url + sep + "v=" + encodeURIComponent(d.read_at_iso || Date.now());
+        const lvl = parseFloat(d.closeup_level != null ? d.closeup_level : d.level).toFixed(1);
+        closeupEl.src = url;
+        closeupEl.alt = "Staff gauge close-up, " + lvl + " ft";
+        closeupEl.title = "Staff gauge close-up \u2014 tap to enlarge";
+        closeupEl.style.display = "block";
+        closeupEl.onclick = () => openLightbox(url, "Staff gauge close-up, " + lvl + " ft", d.closeup_taken);
+      } else {
+        closeupEl.style.display = "none";
+      }
+    }
+
     // Trend indicator
     const trendEl = document.getElementById("gaugeTrend");
     if (trendEl && d.previous_level != null) {

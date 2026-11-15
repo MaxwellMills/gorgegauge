@@ -30,4 +30,6 @@ jobs:
             --delete \
             --cache-control "public, max-age=60" \
             --exclude "*.json" \
-            --exclude "pulse/*"
+            --exclude "pulse/*" \
+            --exclude "gauge/*" \
+            --exclude "husum-preview.jpg"

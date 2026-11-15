@@ -423,6 +423,29 @@ main {
   white-space: nowrap;
 }
 
+/* Number on the left, staff close-up on the right */
+.gauge-body {
+  display: flex;
+  align-items: stretch;
+  gap: 1.1rem;
+}
+
+.gauge-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.gauge-closeup {
+  flex: 0 0 auto;
+  align-self: center;
+  height: 9.5rem;
+  width: auto;             /* the whole staff, top to waterline; tap to enlarge */
+  border-radius: 0.5rem;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  cursor: zoom-in;
+  background: #0b1220;
+}
+
 /* ── Weather Strip (Ambient Weather station) ─────────────────────────────── */
 
 .weather-strip {
@@ -566,6 +589,14 @@ main {
   .gauge-read-at {
     font-size: 0.7rem;
     color: #4b5563;
+  }
+
+  .gauge-body {
+    gap: 0.8rem;
+  }
+
+  .gauge-closeup {
+    height: 11rem;
   }
 }
 

@@ -17,7 +17,7 @@
   <meta name="twitter:description" content="Live trail cam gauge reading for Husum Falls on the White Salmon River, WA. AI-estimated water level updated daily." />
   <meta name="twitter:image" content="https://gorgegauge.com/husum-preview.jpg" />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="stylesheet" href="stylesV2.css?v=20260921" />
+  <link rel="stylesheet" href="stylesV2.css?v=20261114" />
 </head>
 
 <body data-location="Trout Creek">
@@ -44,22 +44,30 @@
   <main>
     <!-- Gauge strip — hidden until JS loads gauge data -->
     <section class="gauge-strip" id="gaugeStrip">
-      <div class="gauge-head">
-        <div class="gauge-reading">
-          <span class="gauge-num" id="gaugeNumber">—</span><span class="gauge-unit"> ft</span>
+      <div class="gauge-body">
+        <div class="gauge-main">
+          <div class="gauge-head">
+            <div class="gauge-reading">
+              <span class="gauge-num" id="gaugeNumber">—</span><span class="gauge-unit"> ft</span>
+            </div>
+            <span class="gauge-badge" id="gaugeBadge"></span>
+            <span class="gauge-trend" id="gaugeTrend"></span>
+          </div>
+          <div class="gauge-bar-track">
+            <div class="gauge-bar-fill" id="gaugeBarFill"></div>
+          </div>
+          <div class="gauge-ticks">
+            <span>0</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6 ft</span>
+          </div>
+          <div class="gauge-footer">
+            <span class="gauge-read-at" id="gaugeReadAt"></span>
+            <span class="gauge-notes" id="gaugeNotes"></span>
+          </div>
         </div>
-        <span class="gauge-badge" id="gaugeBadge"></span>
-        <span class="gauge-trend" id="gaugeTrend"></span>
-      </div>
-      <div class="gauge-bar-track">
-        <div class="gauge-bar-fill" id="gaugeBarFill"></div>
-      </div>
-      <div class="gauge-ticks">
-        <span>0</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6 ft</span>
-      </div>
-      <div class="gauge-footer">
-        <span class="gauge-read-at" id="gaugeReadAt"></span>
-        <span class="gauge-notes" id="gaugeNotes"></span>
+        <!-- The staff from the frame the number came from, enlarged, with the
+             foot marks and the detected waterline drawn on. Hidden until the
+             gauge JSON names one. -->
+        <img id="gaugeCloseup" class="gauge-closeup" alt="" style="display:none" />
       </div>
     </section>
 
