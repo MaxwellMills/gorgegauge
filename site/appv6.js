@@ -188,18 +188,25 @@ async function loadGauge() {
       readAt.textContent = text;
     }
 
-    // AI notes
+    // Where the number came from, in one plain sentence. The reader writes
+    // "summary"; older JSON only has the technical "notes", which stay out
+    // of the page except for a wet-band warning.
     const notesEl = document.getElementById("gaugeNotes");
     if (notesEl) {
       const parts = [];
-      if (d.low != null && d.high != null && d.spread >= 0.15) {
+      if (d.summary) {
+        parts.push(d.summary);
+      } else if (d.low != null && d.high != null && d.spread >= 0.15) {
         parts.push(
           `range ${parseFloat(d.low).toFixed(1)}\u2013${parseFloat(d.high).toFixed(1)} ft`
           + ` across ${d.images_analyzed || d.readings?.length || 0} photos`
         );
       }
-      if (d.notes) parts.push(d.notes);
-      notesEl.textContent = parts.join(" \u00b7 ");
+      if (d.notes && /wet band/i.test(d.notes)) {
+        parts.push("A wet band on the staff may be reading as the waterline.");
+      }
+      notesEl.textContent = parts.join(" ");
+      notesEl.title = parts.join(" ");
     }
 
     // Staff close-up: the frame the number came from, enlarged, with the

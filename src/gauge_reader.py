@@ -58,11 +58,16 @@ Revised 2026-11-14, the day the Truss camera (016578004123334) went in:
   * The Truss has a calibration (see DEFAULT_CALIBRATION) taken from two
     fixed references rather than the numerals, which it cannot resolve.
 
-  * The foot rows of both cameras were moved 0.25 ft down. The 2026-09-02
-    rows were the centres of the painted numerals; the foot line is at the
-    bottom of each numeral. Readings from 2026-09-03 to 2026-11-14 are about
-    0.25 ft low. READER_VERSION went to 3 so the jump check does not compare
-    across the change.
+  * Both cameras are anchored to a reading of the staff by eye: 1.0 ft on
+    2026-11-14, a flat day. The 2026-09-02 rows were the centres of the
+    painted numerals; the foot line is at the bottom of each numeral, 0.15 ft
+    lower, which is where the anchor puts it. Readings from 2026-09-03 to
+    2026-11-14 are about 0.15 ft low. READER_VERSION went to 4 so the jump
+    check does not compare across the change.
+
+  * The waterline is refined to the bright-to-dark edge at the water rather
+    than the steepest drop near the candidate step: a wet strip of board
+    above the water is dark too, and the old rule landed anywhere in it.
 
   * A close-up of the staff is published next to the JSON: the frame the
     number came from, enlarged, with the calibrated foot marks and the
@@ -540,13 +545,17 @@ def level_from_geometry(marks, waterline_y):
 # ±0.15 ft. To refine: stand at the river, read the staff by eye at the
 # moment a photo fires, and shift "marks" so the reading matches.
 #
-# CORRECTED 2026-11-14. Those rows were the centres of the painted numerals.
-# The foot mark on this staff is the line at the BOTTOM of each numeral, and
-# on the 1920x1440 HD frames of 2026-09-02 and 2026-10-31 it sits a median
-# 0.25 ft below the old rows (5 numerals x 2 frames, spread 0.07..0.38).
-# With the rows moved down 0.25 ft the top of the board lands at 7.01 ft,
-# which is where a 7 ft board's top should be. Every reading published
-# between 2026-09-03 and 2026-11-14 is therefore about 0.25 ft LOW.
+# CORRECTED 2026-11-14. Those rows were the centres of the painted numerals;
+# the foot mark on this staff is the line at the BOTTOM of each numeral.
+# ANCHORED the same day: Max read the staff by eye at 1.0 ft, on a day the
+# USGS flow at Underwood held between 443 and 478 cfs. The surface rule
+# (see detect_waterline) put the surface at calibration rows 340, 341, 342
+# and 342 in the four frames of 2026-11-13/14, so the 1 ft mark is at their
+# mean, 341.25, and the other marks follow at 18.5 px/ft. That is 2.75 px
+# (0.15 ft) below the numeral centres, which makes the numerals about 0.3 ft
+# tall with the foot line at their foot. Readings published between
+# 2026-09-03 and 2026-11-14 (reader_version 2) are about 0.15 ft LOW; the
+# single reader_version 3 run on 2026-11-14 was 0.1 ft HIGH.
 #
 # REGISTRATION (added 2026-11-13). Between 2026-09-15 and 2026-10-03 the
 # camera's view moved up by 7 rows and stayed there, which put every reading
@@ -568,9 +577,9 @@ DEFAULT_CALIBRATION = {
         "staff_x": [349, 358],
         "staff_top_y": 232,
         "scan_bottom_y": 430,
-        # 2026-09-02 numeral centres 246.0 .. 338.5, moved down 4.6 px
-        # (0.25 ft at 18.5 px/ft) to the foot line under each numeral.
-        "marks": {"6": 250.6, "5": 269.1, "4": 287.6, "3": 306.1, "2": 324.6, "1": 343.1},
+        # 1 ft at 341.25, anchored to a 1.0 ft reading by eye on 2026-11-14;
+        # 18.5 px/ft from the 2026-09-02 numeral spacing.
+        "marks": {"6": 248.75, "5": 267.25, "4": 285.75, "3": 304.25, "2": 322.75, "1": 341.25},
         # Grey-level mean of columns 351-357, rows 228-311, in the calibration
         # frame. The frame is registered to this before it is read.
         "ref_x": [351, 358],
@@ -590,20 +599,22 @@ DEFAULT_CALIBRATION = {
     # 3840x2160 upscale at quality ~15 and the rows below scale to it. The
     # numerals are not resolvable at either size, so the marks come from two
     # fixed references tied to the old camera's calibration on the same day:
-    # the top of the staff board (row 223 here, 7.01 ft) and the centre of
-    # the white stripe painted across the rock (row 313 here, 3.49 ft), so
-    # 25.6 px/ft. With those, the same detector read within 0.1 ft of the old
-    # camera on five clean frames (the other three sat on the top of the wet
-    # band, as the old camera also does). Calibration frame:
+    # the top of the staff board (row 223 here) and the centre of the white
+    # stripe painted across the rock (row 313 here), 3.52 ft apart on the old
+    # camera, so 25.6 px/ft. ANCHORED 2026-11-14 to Max's 1.0 ft reading by
+    # eye: the surface rule put the surface at rows 375, 375, 375, 374, 374
+    # in the five clean frames that afternoon (two more sat on the top of
+    # the wet band, as the old camera also does), so the 1 ft mark is at
+    # 374.6. On that calibration the board top is 6.92 ft and the stripe
+    # 3.41 ft; the old camera's say 6.91 and 3.39. Calibration frame:
     # 016578004123334-100-4-11142026130143-SYFW00141.jpg. Frames from before
-    # the final aim that day (setup shots) correlate below 0.66. The rows
-    # carry the same 0.25 ft correction as the old camera's (see above).
+    # the final aim that day (setup shots) correlate below 0.66.
     "016578004123334": {
         "frame": [1280, 720],
         "staff_x": [544, 552],
         "staff_top_y": 223,
         "scan_bottom_y": 420,
-        "marks": {"6": 248.9, "5": 274.5, "4": 300.1, "3": 325.7, "2": 351.3, "1": 376.9},
+        "marks": {"6": 246.6, "5": 272.2, "4": 297.8, "3": 323.4, "2": 349.0, "1": 374.6},
         "ref_x": [545, 552],
         "ref_rows": [219, 305],
         "ref_profile": [
@@ -956,15 +967,27 @@ def detect_waterline(image_bytes, cal, debug=None):
     i = best["i"]
     reflection = best["rise"] is not None and best["rise"] >= REFLECT_RISE
 
-    # Refine to the steepest local drop. If a hashmark sits just above the
-    # surface both edges are steep; take the LOWER one that is at least 60%
-    # as steep as the steepest, since the surface is below the mark.
-    w = max(2, round(4 * ky))
-    lo, hi = max(1, i - w), min(n - 3, i + w + 2)
-    drops = [(rows[j - 1] - rows[j + 2], j) for j in range(lo, hi)]
-    max_drop = max(d for d, _ in drops)
-    ref = max(j for d, j in drops if d >= 0.6 * max_drop)
-    frame_y = y0 + ref + 1.0
+    # Refine to the surface itself. The candidate step is the top of the
+    # transition, and a wet, darkened strip of board sits just above the
+    # water (up to 0.3 ft of it from the Truss camera), so the step can land
+    # anywhere in that strip. The surface shows as a bright row (the
+    # specular line where the board meets the water) followed by the
+    # darkest rows in the column. Take the lowest bright-to-dark edge within
+    # 0.4 ft below the candidate that is at least 60% as strong as the
+    # strongest and whose dark side is water. On 2026-11-14, a flat day read
+    # at 1.0 ft by eye, this put the surface on the same row in all seven
+    # Truss frames; the previous rule spread them over 0.27 ft.
+    w_down = max(4, round(0.4 * cal["px_per_ft"]))
+    lo, hi = max(2, i - 1), min(n - 2, i + w_down)
+    water_lim = water_ref + WATER_BELOW * rng
+    edges = [(max(rows[j - 2], rows[j - 1]) - min(rows[j], rows[j + 1]), j)
+             for j in range(lo, hi) if min(rows[j], rows[j + 1]) <= water_lim]
+    if edges:
+        strongest = max(e for e, _ in edges)
+        ref = max(j for e, j in edges if e >= 0.6 * strongest)
+    else:
+        ref = i + 1
+    frame_y = y0 + float(ref)
 
     quality = best["strength"]
     tags = []
@@ -1136,7 +1159,9 @@ JUMP_FT = float(os.environ.get("JUMP_FT", "0.5"))
 # new detector, a new calibration). The jump check only compares like with
 # like; the first run after a bump is never flagged against the old reader.
 # 3: 2026-11-14, foot rows moved 0.25 ft down to the line under each numeral.
-READER_VERSION = 3
+# 4: 2026-11-14, both cameras anchored to a 1.0 ft reading by eye, and the
+#    surface refined to the bright-to-dark edge at the water.
+READER_VERSION = 4
 JUMP_FLOW_FRACTION = float(os.environ.get("JUMP_FLOW_FRACTION", "0.25"))
 
 # The staff is watched by two cameras. 865509053179515 is the close one and
@@ -1269,6 +1294,31 @@ def read_consensus(image_list):
         # is drawn from it.
         "closest": closest,
     }
+
+
+def reader_summary(result):
+    """
+    One plain sentence for the page about where the number came from. The
+    technical detail stays in "notes" and "samples" for diagnosis.
+    """
+    counted = [s for s in result["samples"]
+               if s["camera"] in result["counted_camera"].split(",")]
+    n = len(result["readings"])
+    taken = sorted(s["taken"] for s in counted if s.get("taken"))
+    span = ""
+    if taken:
+        try:
+            t0, t1 = datetime.fromisoformat(taken[0]), datetime.fromisoformat(taken[-1])
+            if t0.date() == t1.date():
+                span = t0.strftime(" taken %b %-d")
+            else:
+                span = f" taken {t0.strftime('%b %-d')} to {t1.strftime('%b %-d')}"
+        except ValueError:
+            pass
+    text = f"Read from {n} photo{'s' if n != 1 else ''}{span}."
+    if result["spread"] >= 0.15:
+        text += f" The readings ranged {result['low']:.1f} to {result['high']:.1f} ft."
+    return text
 
 
 # -- Cross-check --------------------------------------------------------------
@@ -1675,6 +1725,7 @@ def main():
     }
     payload.update(fetch_usgs())
     payload.update(build_closeup(result.get("closest")))
+    payload["summary"] = reader_summary(result)
 
     # A real jump at Husum shows up at Underwood too. A big change in the
     # staff reading while the USGS flow barely moved is the signature of a
