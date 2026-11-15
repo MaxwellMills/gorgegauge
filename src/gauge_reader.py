@@ -234,7 +234,11 @@ def select_window(keys, prev_stamp, n):
 
     by_camera = {}
     for k, t in dated:
+        if camera_id(k) in IGNORE_CAMERAS:
+            continue
         by_camera.setdefault(camera_id(k), []).append((k, t))
+    if not by_camera:
+        return []
 
     # A camera that has not uploaded in a week is gone (retired, dead, or
     # moved); without a cutoff it would otherwise contribute its last n frames
@@ -1164,12 +1168,19 @@ JUMP_FT = float(os.environ.get("JUMP_FT", "0.5"))
 READER_VERSION = 4
 JUMP_FLOW_FRACTION = float(os.environ.get("JUMP_FLOW_FRACTION", "0.25"))
 
-# The staff is watched by two cameras. 865509053179515 is the close one and
-# agrees with ground truth; 016578000423746 has read about half a foot high on
-# three consecutive days from a different angle. The secondary is still read
-# and recorded every run, but only counts toward the published number when the
-# primary produced fewer than MIN_KEPT usable frames.
+# The staff is watched by two cameras: 865509053179515, the original, and
+# 016578004123334, the Truss (from 2026-11-14). The primary is the one the
+# published number comes from while it delivers MIN_KEPT frames a run; the
+# other calibrated camera is read and recorded every run and takes over when
+# it does not.
 PRIMARY_CAMERA = os.environ.get("PRIMARY_CAMERA", "865509053179515").strip()
+
+# Cameras under SOURCE_PREFIX that are not at Husum at all. The scraper files
+# every camera in the Reveal account under tactacam/Husum/, and 016578000423746
+# is the Trout Creek camera: a different river, a different staff. Until
+# 2026-11-14 the reader modelled it every run as a "second Husum camera that
+# reads half a foot high". Its frames are not read.
+IGNORE_CAMERAS = {c.strip() for c in os.environ.get("IGNORE_CAMERAS", "016578000423746").split(",") if c.strip()}
 
 CONF_WEIGHT = {"high": 3, "medium": 2, "low": 1}
 

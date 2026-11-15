@@ -24,6 +24,10 @@ PUBLIC_IMAGE_BASE = os.environ.get(
     "PUBLIC_IMAGE_BASE",
     "https://gorgewhitewater.s3.us-east-2.amazonaws.com"
 )
+# Every camera in the Reveal account is filed under tactacam/Husum/, including
+# the Trout Creek camera (016578000423746). Its frames do not belong in the
+# Husum date browser. The IMEI is the leading field of the filename.
+IGNORE_CAMERAS = {c.strip() for c in os.environ.get("IGNORE_CAMERAS", "016578000423746").split(",") if c.strip()}
 
 s3 = boto3.client("s3")
 
@@ -45,8 +49,11 @@ def main():
     for page in paginator.paginate(Bucket=SOURCE_BUCKET, Prefix=SOURCE_PREFIX):
         for obj in page.get("Contents", []):
             key = obj["Key"]
-            if key.lower().endswith((".jpg", ".jpeg")):
-                keys.append(key)
+            if not key.lower().endswith((".jpg", ".jpeg")):
+                continue
+            if key.split("/")[-1].split("-")[0] in IGNORE_CAMERAS:
+                continue
+            keys.append(key)
 
     log.info("Found %d images — parsing timestamps…", len(keys))
 
