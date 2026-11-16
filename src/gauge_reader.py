@@ -103,6 +103,7 @@ HISTORY_KEY    = os.environ.get("HISTORY_KEY",    "husumGaugeHistory.json")
 IMAGE_COUNT    = int(os.environ.get("IMAGE_COUNT", "5"))      # per camera
 MIN_IMAGES     = int(os.environ.get("MIN_IMAGES", "2"))
 STALE_CAMERA_DAYS = int(os.environ.get("STALE_CAMERA_DAYS", "7"))
+STALE_FRAME_DAYS = float(os.environ.get("STALE_FRAME_DAYS", "1.5"))
 HISTORY_MAX    = int(os.environ.get("HISTORY_MAX", "730"))
 
 # Independent cross-check: USGS White Salmon River nr Underwood, WA.
@@ -245,11 +246,21 @@ def select_window(keys, prev_stamp, n):
     # from months ago and cost model calls to read them.
     stale_before = dated[0][1] - timedelta(days=STALE_CAMERA_DAYS)
 
+    # Frames more than STALE_FRAME_DAYS older than the newest upload describe
+    # a river that may no longer exist. Without a cutoff (first run, REREAD)
+    # a camera that died two days ago would otherwise vote with its last
+    # frames as if they were today's: 2026-11-16, the old camera silent since
+    # the 14th, a re-read published 1.0 ft from its Nov 12-14 frames.
+    old_before = dated[0][1] - timedelta(days=STALE_FRAME_DAYS)
+
     window = []
     for cam, frames in sorted(by_camera.items()):
         if frames[0][1] < stale_before:
             log.info("Camera %s: newest frame %s is over %d days older than the newest upload — ignoring it.",
                      cam, frames[0][1], STALE_CAMERA_DAYS)
+            continue
+        frames = [(k, t) for k, t in frames if t >= old_before]
+        if not frames:
             continue
         if cutoff is None:
             window += frames[:n]
@@ -925,10 +936,15 @@ def detect_waterline(image_bytes, cal, debug=None):
                       f"— glare on the water, or staff obscured"), 0.0, {}
 
     white_level = water_ref + WHITE_BELOW * rng
+    look_far = max(look_up, round(1.5 * cal["px_per_ft"]))
     judged = []
     for i, strength in cands.items():
         above = max(sm[max(0, i - look_up):i])
         staff_above = above >= water_ref + STAFF_ABOVE * rng
+        # Staff anywhere in the 1.5 ft above: true of the surface under a
+        # wet band (band directly above, white staff above that), false of
+        # an edge down in the reflection.
+        staff_far_above = max(sm[max(0, i - look_far):i]) >= water_ref + STAFF_ABOVE * rng
         dz = sm[i + 1:i + 1 + dark_n]
         if len(dz) < 3:
             continue
@@ -945,6 +961,7 @@ def detect_waterline(image_bytes, cal, debug=None):
         rise = (sum(rz) / len(rz) - dark) / rng if len(rz) >= 4 else None
         judged.append({
             "i": i, "strength": strength, "staff_above": staff_above,
+            "staff_far_above": staff_far_above,
             "water_below": water_below, "white_below": white_below,
             "dark": (dark - water_ref) / rng, "rise": rise,
         })
@@ -952,15 +969,26 @@ def detect_waterline(image_bytes, cal, debug=None):
     if debug is not None:
         debug.extend(dict(c, row=y0 + c["i"], level=level_at(cal, y0 + c["i"] + 1)) for c in judged)
     passing = [c for c in judged if c["staff_above"] and c["water_below"] and not c["white_below"]]
+    # The surface's own signature: water-dark below, no white below, the
+    # staff's reflection under it, and staff somewhere within 1.5 ft above.
+    # It need not have staff in the 20 rows directly above, because a wet
+    # band as dark as the water can sit there: on 2026-11-15 the Truss read
+    # 2.0 ft on a river at 1.2 ft for exactly that reason, the band top
+    # passing every test and the real surface 0.7 ft lower failing only
+    # staff_above while showing a 0.3 reflection rise.
+    confirmed = [c for c in judged if c["water_below"] and not c["white_below"]
+                 and c["staff_far_above"] and c["rise"] is not None and c["rise"] >= REFLECT_RISE]
     band = False
-    if passing:
+    if confirmed:
         # The highest candidate the reflection confirms. The top of a wet
-        # band passes the tests above but has stained staff under it, not a
-        # reflection; the surface below it has both. With no confirmed
-        # candidate, the highest one (the reflection's lower edge is always
-        # lower, so it never wins by default).
-        confirmed = [c for c in passing if c["rise"] is not None and c["rise"] >= REFLECT_RISE]
-        best = min(confirmed or passing, key=lambda c: c["i"])
+        # band passes the plain tests but has stained staff under it, not a
+        # reflection; the surface has both.
+        best = min(confirmed, key=lambda c: c["i"])
+    elif passing:
+        # No reflection anywhere (dark overcast water): the highest passing
+        # candidate. The reflection's lower edge is always lower, so it
+        # never wins by default.
+        best = min(passing, key=lambda c: c["i"])
     else:
         fallback = [c for c in judged if c["staff_above"] and not c["white_below"]]
         if not fallback:
@@ -970,6 +998,30 @@ def detect_waterline(image_bytes, cal, debug=None):
 
     i = best["i"]
     reflection = best["rise"] is not None and best["rise"] >= REFLECT_RISE
+    water_lim = water_ref + WATER_BELOW * rng
+
+    # A wet band as dark as the water hides the surface from the candidate
+    # search: the step from band to water is too small to be a candidate, so
+    # the band top is chosen with nothing confirming it. Below an unconfirmed
+    # choice, look up to 1.5 ft down for the surface's own signature (a
+    # strong bright-to-dark edge, the dark side water, the staff's reflection
+    # brightening beneath it) and take the strongest such edge if there is one.
+    if not reflection and not band:
+        far = max(8, round(1.5 * cal["px_per_ft"]))
+        found, found_edge = None, 0.0
+        for j in range(i + dark_n, min(n - refl_n - dark_n - 2, i + far)):
+            edge = max(rows[j - 2], rows[j - 1]) - min(rows[j], rows[j + 1])
+            if edge < 0.3 * rng or min(rows[j], rows[j + 1]) > water_lim:
+                continue
+            dark_j = statistics.median(sm[j + 1:j + 1 + dark_n])
+            rz = sm[j + 1 + dark_n:j + 1 + dark_n + refl_n]
+            rise_j = (sum(rz) / len(rz) - dark_j) / rng if len(rz) >= 4 else None
+            if rise_j is not None and rise_j >= REFLECT_RISE and edge > found_edge:
+                found, found_edge = j, edge
+        if found is not None:
+            best = dict(best, i=found, rise=None, strength=found_edge / rng)
+            i = found
+            reflection = True
 
     # Refine to the surface itself. The candidate step is the top of the
     # transition, and a wet, darkened strip of board sits just above the
@@ -983,7 +1035,6 @@ def detect_waterline(image_bytes, cal, debug=None):
     # Truss frames; the previous rule spread them over 0.27 ft.
     w_down = max(4, round(0.4 * cal["px_per_ft"]))
     lo, hi = max(2, i - 1), min(n - 2, i + w_down)
-    water_lim = water_ref + WATER_BELOW * rng
     edges = [(max(rows[j - 2], rows[j - 1]) - min(rows[j], rows[j + 1]), j)
              for j in range(lo, hi) if min(rows[j], rows[j + 1]) <= water_lim]
     if edges:
